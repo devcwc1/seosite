@@ -1,0 +1,25 @@
+# Keep the build context small and never ship local state / secrets.
+**/node_modules
+**/.next
+**/out
+**/build
+**/dist
+**/coverage
+**/.turbo
+
+.git
+.gitignore
+**/.DS_Store
+**/Thumbs.db
+
+# Never copy real env files into the image (the template is fine to keep out too).
+**/.env
+**/.env.*
+
+**/*.tsbuildinfo
+**/npm-debug.log*
+
+# Docs / editor
+**/.vscode
+**/.idea
+README.md

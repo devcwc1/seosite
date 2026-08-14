@@ -1,0 +1,41 @@
+# Caddy reverse proxy for the Orbit stack.
+#
+# Caddy terminates TLS and proxies to the internal Next.js apps over orbit-net.
+# It automatically redirects HTTP (:80) to HTTPS (:443) and provisions certs:
+#   * real domains  -> Let's Encrypt (needs ACME_EMAIL + public DNS + 80/443)
+#   * *.localhost   -> Caddy's local internal CA (for development)
+#
+# Domains and email are injected from the container environment (see compose).
+
+{
+	email {$ACME_EMAIL}
+}
+
+# ------------------------------------------------------------------ storefront
+{$STOREFRONT_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		# Basic hardening headers.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	reverse_proxy storefront:3000
+}
+
+# ----------------------------------------------------------------- orbit-admin
+{$ADMIN_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	reverse_proxy orbit-admin:3000
+}
