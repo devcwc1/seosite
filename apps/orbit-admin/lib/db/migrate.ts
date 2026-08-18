@@ -36,18 +36,31 @@ const LOCK_KEY_SQL = sql`hashtext('orbit_migrations')`;
  * Acquire a cluster-wide advisory lock, run pending Drizzle migrations exactly
  * once, then flip the readiness flag. Safe to call from every booting instance:
  * they serialize on the advisory lock, and Drizzle skips already-applied
- * migrations. On any failure the process exits non-zero so an orchestrator can
- * restart or halt the rollout.
+ * migrations.
+ *
+ * Failure behaviour is environment-dependent:
+ *   - production: exit non-zero so an orchestrator can restart or halt rollout.
+ *   - development: log a warning and let the dev server boot without a database
+ *     (the readiness flag stays false, so /api/health reports 503). This keeps
+ *     local UI work unblocked when Postgres isn't running.
  */
 export async function runBootMigrations(): Promise<void> {
+  const isProduction = process.env.NODE_ENV === "production";
   const connectionString = process.env.DATABASE_URL;
 
   if (!connectionString) {
-    bootLogger.error(
-      { event: "migrate.config_error" },
-      "DATABASE_URL is not set; cannot run boot migrations",
+    if (isProduction) {
+      bootLogger.error(
+        { event: "migrate.config_error" },
+        "DATABASE_URL is not set; cannot run boot migrations",
+      );
+      process.exit(1);
+    }
+    bootLogger.warn(
+      { event: "migrate.skipped" },
+      "DATABASE_URL is not set; skipping boot migrations (development)",
     );
-    process.exit(1);
+    return;
   }
 
   // A dedicated client (not the shared pool) so the session-level advisory lock
@@ -67,17 +80,25 @@ export async function runBootMigrations(): Promise<void> {
     setMigrationComplete(true);
     bootLogger.info({ event: "migrate.complete" }, "Migrations complete");
   } catch (error) {
-    bootLogger.error(
-      {
-        event: "migrate.failed",
-        err:
-          error instanceof Error
-            ? { name: error.name, message: error.message, stack: error.stack }
-            : error,
-      },
-      "Boot migrations failed",
+    const payload = {
+      event: "migrate.failed",
+      err:
+        error instanceof Error
+          ? { name: error.name, message: error.message, stack: error.stack }
+          : error,
+    };
+
+    if (isProduction) {
+      bootLogger.error(payload, "Boot migrations failed");
+      process.exit(1);
+    }
+
+    // Development: don't kill the dev server just because Postgres is down.
+    bootLogger.warn(
+      payload,
+      "Boot migrations failed; continuing without a database (development). " +
+        "Start Postgres and restart to apply migrations.",
     );
-    process.exit(1);
   } finally {
     // Always release the lock and close the connection, even on the success
     // path. `process.exit(1)` above short-circuits into here first.

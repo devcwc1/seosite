@@ -36,6 +36,25 @@ export type ProductCategory = {
   isPrimary: boolean;
 };
 
+/** SEO / meta details for a product. */
+export type ProductMeta = {
+  title?: string;
+  description?: string;
+  keywords?: string;
+};
+
+/** A single customer review authored/managed in the admin. */
+export type ProductReview = {
+  id: string;
+  author: string;
+  /** 1–5 stars. */
+  rating: number;
+  title?: string;
+  body: string;
+  /** ISO timestamp. */
+  createdAt: string;
+};
+
 /** Immutable snapshot of a product's content at a given revision. */
 export type ProductContentSnapshot = {
   title: string;
@@ -43,6 +62,8 @@ export type ProductContentSnapshot = {
   description: string | null;
   images: ProductImage[];
   categories: ProductCategory[];
+  meta: ProductMeta;
+  reviews: ProductReview[];
   locale: string;
 };
 
@@ -56,6 +77,8 @@ export const productStatus = pgEnum("product_status", [
   "published",
   "archived",
 ]);
+
+export type ProductStatus = (typeof productStatus.enumValues)[number];
 
 /* -------------------------------------------------------------------------- */
 /*  users                                                                      */
@@ -121,7 +144,9 @@ export const products = pgTable(
     /** Price in the smallest currency unit (e.g. cents) to avoid float drift. */
     priceCents: integer("price_cents").notNull().default(0),
     currency: varchar("currency", { length: 3 }).notNull().default("EUR"),
-    /** Simple on-hand stock counter for stock maintenance. */
+    /** Whether the product is available to buy. Drives the storefront badge. */
+    inStock: boolean("in_stock").notNull().default(true),
+    /** On-hand stock counter; only meaningful while `inStock` is true. */
     stockQuantity: integer("stock_quantity").notNull().default(0),
     /**
      * Points at the live row in `product_content`. Nullable so a product can be
@@ -168,6 +193,13 @@ export const productContent = pgTable(
       .default(sql`'[]'::jsonb`),
     categories: jsonb("categories")
       .$type<ProductCategory[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** SEO / meta details (title, description, keywords). */
+    meta: jsonb("meta").$type<ProductMeta>().notNull().default(sql`'{}'::jsonb`),
+    /** Customer reviews managed alongside the product content. */
+    reviews: jsonb("reviews")
+      .$type<ProductReview[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
     locale: varchar("locale", { length: 10 }).notNull().default("de"),
