@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Upload } from "lucide-react";
 
 import {
   createProductAction,
@@ -47,6 +47,12 @@ type ReviewDraft = {
   createdAt: string;
 };
 
+type ImageDraft = {
+  id: string;
+  url: string;
+  alt: string;
+};
+
 export type ProductFormInitial = {
   id: string;
   title: string;
@@ -59,6 +65,7 @@ export type ProductFormInitial = {
   currency: string;
   inStock: boolean;
   stockQuantity: number;
+  images: { url: string; alt?: string }[];
   meta: { title?: string; description?: string; keywords?: string };
   reviews: ReviewDraft[];
 };
@@ -108,6 +115,14 @@ export function ProductForm({
     metaKeywords: initial?.meta.keywords ?? "",
   });
 
+  const [images, setImages] = useState<ImageDraft[]>(
+    initial?.images.map((image) => ({
+      id: crypto.randomUUID(),
+      url: image.url,
+      alt: image.alt ?? "",
+    })) ?? [],
+  );
+
   const [reviews, setReviews] = useState<ReviewDraft[]>(
     initial?.reviews.map((r) => ({ ...r })) ?? [],
   );
@@ -133,8 +148,50 @@ export function ProductForm({
     );
   }
 
+  function updateImage(id: string, patch: Partial<ImageDraft>) {
+    setImages((prev) =>
+      prev.map((img) => (img.id === id ? { ...img, ...patch } : img)),
+    );
+  }
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  async function onFilesSelected(fileList: FileList | null) {
+    if (!fileList || fileList.length === 0) return;
+    setUploadError(null);
+    setUploading(true);
+    try {
+      for (const file of Array.from(fileList)) {
+        const body = new FormData();
+        body.append("file", file);
+        const res = await fetch("/api/uploads", { method: "POST", body });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          throw new Error(data.error ?? "Upload failed");
+        }
+        const { url } = (await res.json()) as { url: string };
+        setImages((prev) => [
+          ...prev,
+          { id: crypto.randomUUID(), url, alt: "" },
+        ]);
+      }
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
   const reviewsError = Object.entries(errors).find(([k]) =>
     k.startsWith("reviews"),
+  )?.[1];
+  const imagesError = Object.entries(errors).find(([k]) =>
+    k.startsWith("images"),
   )?.[1];
 
   function onSubmit(event: React.FormEvent) {
@@ -151,6 +208,9 @@ export function ProductForm({
       currency: values.currency,
       inStock: values.inStock,
       stockQuantity: values.stockQuantity,
+      images: images
+        .filter((image) => image.url.trim() !== "")
+        .map((image) => ({ url: image.url.trim(), alt: image.alt })),
       meta: {
         title: values.metaTitle,
         description: values.metaDescription,
@@ -266,6 +326,85 @@ export function ProductForm({
               </SelectContent>
             </Select>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* -------------------------------------------------------- Images */}
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle>Images</CardTitle>
+            <CardDescription>
+              {images.length} {images.length === 1 ? "image" : "images"} — shown
+              in the order listed.
+            </CardDescription>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+            multiple
+            className="hidden"
+            onChange={(e) => onFilesSelected(e.target.files)}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={uploading}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload className="size-4" aria-hidden />
+            {uploading ? "Uploading…" : "Upload image"}
+          </Button>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <FieldError message={uploadError ?? imagesError} />
+          {images.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No images yet. Upload PNG, JPEG, WebP, GIF or AVIF (max 5 MB).
+            </p>
+          ) : (
+            images.map((image) => (
+              <div
+                key={image.id}
+                className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[6rem_1fr_auto] sm:items-start"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={image.url || undefined}
+                  alt={image.alt || "Product image preview"}
+                  className="size-24 rounded-md border bg-muted object-cover"
+                />
+                <div className="grid gap-2">
+                  <Label>Alt text</Label>
+                  <Input
+                    value={image.alt}
+                    onChange={(e) =>
+                      updateImage(image.id, { alt: e.target.value })
+                    }
+                    placeholder="Describes the image for accessibility"
+                  />
+                  <p className="truncate text-xs text-muted-foreground">
+                    {image.url}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Remove image"
+                  onClick={() =>
+                    setImages((prev) =>
+                      prev.filter((img) => img.id !== image.id),
+                    )
+                  }
+                >
+                  <Trash2 className="size-4" aria-hidden />
+                </Button>
+              </div>
+            ))
+          )}
         </CardContent>
       </Card>
 

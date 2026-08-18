@@ -10,6 +10,8 @@ export type ProductReviewPayload = {
   createdAt: string;
 };
 
+export type ProductImagePayload = { url: string; alt: string };
+
 export type ProductFormPayload = {
   title: string;
   slug: string;
@@ -21,9 +23,24 @@ export type ProductFormPayload = {
   currency: string;
   inStock: boolean;
   stockQuantity: string;
+  images: ProductImagePayload[];
   meta: { title: string; description: string; keywords: string };
   reviews: ProductReviewPayload[];
 };
+
+const imageSchema = z.object({
+  // Either an absolute http(s) URL or a site-relative uploaded path (/api/uploads/…).
+  url: z
+    .string()
+    .trim()
+    .min(1, "Image is required")
+    .max(2048)
+    .refine(
+      (value) => /^https?:\/\//i.test(value) || value.startsWith("/"),
+      "Must be an uploaded image or a valid URL",
+    ),
+  alt: z.string().trim().max(300),
+});
 
 const reviewSchema = z.object({
   id: z.string().min(1),
@@ -60,6 +77,7 @@ export const productInputSchema = z.object({
     .number()
     .int("Stock must be a whole number")
     .min(0, "Stock cannot be negative"),
+  images: z.array(imageSchema),
   meta: z.object({
     title: z.string().trim().max(255),
     description: z.string().trim().max(1000),

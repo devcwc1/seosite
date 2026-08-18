@@ -9,6 +9,7 @@ import {
   productContentRevisions,
   products,
   type ProductContentSnapshot,
+  type ProductImage,
   type ProductMeta,
   type ProductReview,
   type ProductStatus,
@@ -33,6 +34,7 @@ export type ProductEditData = {
   currency: string;
   inStock: boolean;
   stockQuantity: number;
+  images: ProductImage[];
   meta: ProductMeta;
   reviews: ProductReview[];
 };
@@ -43,6 +45,14 @@ function toMeta(input: ProductParsed): ProductMeta {
   if (input.meta.description) meta.description = input.meta.description;
   if (input.meta.keywords) meta.keywords = input.meta.keywords;
   return meta;
+}
+
+function toImages(input: ProductParsed): ProductImage[] {
+  return input.images.map((image, index) => ({
+    url: image.url,
+    position: index + 1,
+    ...(image.alt ? { alt: image.alt } : {}),
+  }));
 }
 
 function toReviews(input: ProductParsed): ProductReview[] {
@@ -107,6 +117,7 @@ export async function createProduct(
   const stockQuantity = input.inStock ? input.stockQuantity : 0;
   const meta = toMeta(input);
   const reviews = toReviews(input);
+  const images = toImages(input);
 
   const id = await db.transaction(async (tx) => {
     const [product] = await tx
@@ -131,7 +142,7 @@ export async function createProduct(
         title: input.title,
         shortInfo: input.shortInfo || null,
         description: input.description || null,
-        images: [],
+        images,
         categories: [],
         meta,
         reviews,
@@ -146,7 +157,7 @@ export async function createProduct(
       contentId: content.id,
       productId: product.id,
       version: 1,
-      data: buildSnapshot(input, meta, reviews, [], [], "en"),
+      data: buildSnapshot(input, meta, reviews, images, [], "en"),
       changeNote: "Created",
       editedBy: actorId,
     });
@@ -188,6 +199,7 @@ export async function updateProduct(
   const stockQuantity = input.inStock ? input.stockQuantity : 0;
   const meta = toMeta(input);
   const reviews = toReviews(input);
+  const images = toImages(input);
 
   await db.transaction(async (tx) => {
     const [content] = await tx
@@ -196,8 +208,7 @@ export async function updateProduct(
       .where(eq(productContent.productId, id))
       .limit(1);
 
-    // Preserve fields not managed by this form.
-    const images = content?.images ?? [];
+    // Categories are not managed by this form yet, so preserve them.
     const categories = content?.categories ?? [];
     const locale = content?.locale ?? "en";
     const nextVersion = (content?.version ?? 0) + 1;
@@ -210,6 +221,7 @@ export async function updateProduct(
           title: input.title,
           shortInfo: input.shortInfo || null,
           description: input.description || null,
+          images,
           meta,
           reviews,
           version: nextVersion,
@@ -327,6 +339,7 @@ export async function getProductForEdit(
     currency: product.currency,
     inStock: product.inStock,
     stockQuantity: product.stockQuantity,
+    images: content?.images ?? [],
     meta: content?.meta ?? {},
     reviews: content?.reviews ?? [],
   };

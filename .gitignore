@@ -31,6 +31,9 @@ next-env.d.ts
 *.log
 npm-debug.log*
 
+# uploaded media (served from disk / a mounted volume)
+apps/orbit-admin/uploads/
+
 # os
 .DS_Store
 Thumbs.db

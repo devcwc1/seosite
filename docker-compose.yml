@@ -32,6 +32,7 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER:-orbit}:${POSTGRES_PASSWORD:-orbit}@postgres:5432/${POSTGRES_DB:-orbit_admin}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      UPLOAD_DIR: /app/apps/orbit-admin/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -39,6 +40,8 @@ services:
       - orbit-net
     expose:
       - "3000"
+    volumes:
+      - uploads:/app/apps/orbit-admin/uploads
     healthcheck:
       # Becomes healthy only once boot migrations complete (/api/health -> 200).
       test:
@@ -107,6 +110,7 @@ services:
 
 volumes:
   pgdata:
+  uploads:
   caddy_data:
   caddy_config:
 

@@ -34,6 +34,7 @@ export default async function ProductsPage() {
       inStock: products.inStock,
       stock: products.stockQuantity,
       title: productContent.title,
+      images: productContent.images,
     })
     .from(products)
     .leftJoin(productContent, eq(productContent.id, products.currentContentId))
@@ -80,7 +81,24 @@ export default async function ProductsPage() {
               rows.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell className="font-medium">
-                    {row.title ?? "—"}
+                    <div className="flex items-center gap-3">
+                      {(() => {
+                        const img = row.images
+                          ?.slice()
+                          .sort((a, b) => a.position - b.position)[0];
+                        return img ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={img.url}
+                            alt={img.alt ?? row.title ?? ""}
+                            className="size-9 rounded border bg-muted object-cover"
+                          />
+                        ) : (
+                          <div className="size-9 rounded border bg-muted" />
+                        );
+                      })()}
+                      <span>{row.title ?? "—"}</span>
+                    </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {row.sku}
