@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { problemFor } from "@/lib/http/problem";
 import { createLogger } from "@/lib/logger";
 import { getStorefrontProduct } from "@/lib/storefront/products";
 
@@ -17,12 +18,15 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> },
 ): Promise<NextResponse> {
   const { slug } = await params;
+  const instance = `/api/storefront/products/${slug}`;
 
   try {
     const product = await getStorefrontProduct(slug);
 
     if (!product) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return problemFor(404, "No published product with that slug.", {
+        instance,
+      });
     }
 
     return NextResponse.json(product);
@@ -32,9 +36,6 @@ export async function GET(
       "Product lookup failed",
     );
 
-    return NextResponse.json(
-      { error: "Failed to load product" },
-      { status: 500 },
-    );
+    return problemFor(500, "Failed to load product.", { instance });
   }
 }

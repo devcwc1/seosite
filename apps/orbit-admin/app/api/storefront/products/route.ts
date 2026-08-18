@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { problemFor } from "@/lib/http/problem";
 import { createLogger } from "@/lib/logger";
 import { listStorefrontProducts } from "@/lib/storefront/products";
 
@@ -16,9 +17,8 @@ export async function GET(): Promise<NextResponse> {
   } catch (error) {
     log.error({ err: error, event: "storefront.list_failed" }, "List failed");
 
-    return NextResponse.json(
-      { error: "Failed to load products" },
-      { status: 500 },
-    );
+    return problemFor(500, "Failed to load products.", {
+      instance: "/api/storefront/products",
+    });
   }
 }

@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
 
+import { problemFor } from "@/lib/http/problem";
 import { contentTypeForName, uploadDir } from "@/lib/uploads";
 
 export const runtime = "nodejs";
@@ -12,15 +13,16 @@ export async function GET(
   { params }: { params: Promise<{ name: string }> },
 ): Promise<NextResponse> {
   const { name } = await params;
+  const instance = `/api/uploads/${name}`;
 
   // Only allow simple filenames — never path traversal.
   if (!/^[a-zA-Z0-9._-]+$/.test(name) || name.includes("..")) {
-    return new NextResponse("Bad request", { status: 400 });
+    return problemFor(400, "Invalid file name.", { instance });
   }
 
   const type = contentTypeForName(name);
   if (!type) {
-    return new NextResponse("Not found", { status: 404 });
+    return problemFor(404, "No such file.", { instance });
   }
 
   try {
@@ -32,6 +34,6 @@ export async function GET(
       },
     });
   } catch {
-    return new NextResponse("Not found", { status: 404 });
+    return problemFor(404, "No such file.", { instance });
   }
 }
