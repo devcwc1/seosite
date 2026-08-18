@@ -14,6 +14,7 @@ export type StorefrontProductRow = {
   sku: string;
   priceCents: number;
   currency: string;
+  inStock: boolean;
   stockQuantity: number;
   title: string;
   shortInfo: string | null;
@@ -39,8 +40,9 @@ export function toStorefrontProduct(
     description: row.description,
     priceCents: row.priceCents,
     currency: row.currency,
-    // The storefront needs availability only — never the on-hand count.
-    inStock: row.stockQuantity > 0,
+    // Availability = admin's in-stock flag AND actual on-hand quantity. The
+    // storefront never sees the raw count, only this boolean.
+    inStock: row.inStock && row.stockQuantity > 0,
     // Present images in display order; the DTO's `position` is authoritative.
     images: [...row.images].sort((a, b) => a.position - b.position),
     categories: row.categories,

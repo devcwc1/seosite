@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getCurrentSession } from "@/lib/auth/session";
 import {
   createProduct,
+  deleteProduct,
   updateProduct,
   type MutationResult,
 } from "@/lib/products/mutations";
@@ -47,5 +48,16 @@ export async function updateProductAction(
     revalidatePath("/products");
     revalidatePath(`/products/${id}/edit`);
   }
+  return result;
+}
+
+export async function deleteProductAction(
+  id: string,
+): Promise<MutationResult> {
+  const session = await getCurrentSession();
+  if (!session) return { ok: false, errors: { form: "Not authenticated." } };
+
+  const result = await deleteProduct(id, session.user.id);
+  if (result.ok) revalidatePath("/products");
   return result;
 }

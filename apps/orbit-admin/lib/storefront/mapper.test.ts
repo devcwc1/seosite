@@ -9,6 +9,7 @@ function row(overrides: Partial<StorefrontProductRow> = {}): StorefrontProductRo
     sku: "ORB-MUG-01",
     priceCents: 1899,
     currency: "EUR",
+    inStock: true,
     stockQuantity: 12,
     title: "Orbit Mug",
     shortInfo: "A 350ml ceramic mug.",
@@ -46,6 +47,12 @@ describe("toStorefrontProduct", () => {
   it("reports zero and negative stock as out of stock", () => {
     expect(toStorefrontProduct(row({ stockQuantity: 0 })).inStock).toBe(false);
     expect(toStorefrontProduct(row({ stockQuantity: -1 })).inStock).toBe(false);
+  });
+
+  it("honors the in-stock flag even when quantity is positive", () => {
+    expect(
+      toStorefrontProduct(row({ inStock: false, stockQuantity: 12 })).inStock,
+    ).toBe(false);
   });
 
   it("orders images by position regardless of stored order", () => {

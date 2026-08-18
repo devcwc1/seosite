@@ -4,6 +4,7 @@ import { Plus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
+import { DeleteProductButton } from "@/components/products/delete-product-button";
 import {
   Table,
   TableBody,
@@ -100,12 +101,21 @@ export default async function ProductsPage() {
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Link
-                      href={`/products/${row.id}/edit`}
-                      className={buttonVariants({ variant: "ghost", size: "sm" })}
-                    >
-                      Edit
-                    </Link>
+                    <div className="flex justify-end gap-1">
+                      <Link
+                        href={`/products/${row.id}/edit`}
+                        className={buttonVariants({
+                          variant: "ghost",
+                          size: "sm",
+                        })}
+                      >
+                        Edit
+                      </Link>
+                      <DeleteProductButton
+                        id={row.id}
+                        name={row.title ?? row.sku}
+                      />
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

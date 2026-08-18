@@ -14,6 +14,7 @@ const selection = {
   sku: products.sku,
   priceCents: products.priceCents,
   currency: products.currency,
+  inStock: products.inStock,
   stockQuantity: products.stockQuantity,
   title: productContent.title,
   shortInfo: productContent.shortInfo,

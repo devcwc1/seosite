@@ -1,13 +1,9 @@
 import pino, { type Logger } from "pino";
+import pretty from "pino-pretty";
 
 const isProduction = process.env.NODE_ENV === "production";
 
-/**
- * Application-wide structured logger. In development it pretty-prints via
- * `pino-pretty`; in production it emits newline-delimited JSON for log
- * shippers. Sensitive fields are redacted defensively.
- */
-export const logger: Logger = pino({
+const options = {
   level: process.env.LOG_LEVEL ?? (isProduction ? "info" : "debug"),
   redact: {
     paths: [
@@ -22,19 +18,24 @@ export const logger: Logger = pino({
     ],
     censor: "[redacted]",
   },
-  ...(isProduction
-    ? {}
-    : {
-        transport: {
-          target: "pino-pretty",
-          options: {
-            colorize: true,
-            translateTime: "SYS:standard",
-            ignore: "pid,hostname",
-          },
-        },
+};
+
+/**
+ * Application-wide structured logger. Production emits newline-delimited JSON to
+ * stdout for log shippers. Development pretty-prints via a *synchronous*
+ * `pino-pretty` stream (not a worker `transport`) so Next's dev HMR can't leave
+ * a dangling worker thread — the source of "the worker thread exited" noise.
+ */
+export const logger: Logger = isProduction
+  ? pino(options)
+  : pino(
+      options,
+      pretty({
+        colorize: true,
+        translateTime: "SYS:standard",
+        ignore: "pid,hostname",
       }),
-});
+    );
 
 /** Create a child logger bound to a component or request scope. */
 export function createLogger(bindings: Record<string, unknown>): Logger {

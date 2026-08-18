@@ -274,6 +274,30 @@ export async function updateProduct(
   return { ok: true, id };
 }
 
+export async function deleteProduct(
+  id: string,
+  actorId: string | null,
+): Promise<MutationResult> {
+  const [existing] = await db
+    .select({ sku: products.sku, slug: products.slug })
+    .from(products)
+    .where(eq(products.id, id))
+    .limit(1);
+  if (!existing) return { ok: false, errors: { form: "Product not found." } };
+
+  // Content + revisions cascade via their FKs to products.id.
+  await db.delete(products).where(eq(products.id, id));
+
+  await recordAudit({
+    actorId,
+    action: "product.deleted",
+    target: `product:${id}`,
+    metadata: { sku: existing.sku, slug: existing.slug },
+  });
+
+  return { ok: true, id };
+}
+
 /** Load a product + its live content, shaped for the edit form. */
 export async function getProductForEdit(
   id: string,
