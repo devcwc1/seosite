@@ -126,6 +126,19 @@ description, images, categories, meta, reviews — versioned) ·
 | `apps/orbit-admin/components/products/product-form.tsx` | Shared form (details, pricing/stock, images, meta, reviews) |
 | `apps/orbit-admin/components/products/delete-product-button.tsx` | Delete button (client) |
 
+## orbit-admin — Users (management, admin-only)
+| File | Purpose |
+|------|---------|
+| `apps/orbit-admin/lib/users/validation.ts` | Zod create/update schemas + payload types |
+| `apps/orbit-admin/lib/users/mutations.ts` | list/create/update/delete + guards (last admin, self) |
+| `apps/orbit-admin/app/(protected)/users/actions.ts` | Admin-only server actions |
+| `apps/orbit-admin/app/(protected)/users/page.tsx` | User list (roles, MFA, edit/delete) |
+| `apps/orbit-admin/app/(protected)/users/new/page.tsx` | Create user |
+| `apps/orbit-admin/app/(protected)/users/[id]/edit/page.tsx` | Edit user (role, password reset, MFA reset) |
+| `apps/orbit-admin/components/users/user-form.tsx` | Shared create/edit form |
+| `apps/orbit-admin/components/users/delete-user-button.tsx` | Delete button (guards self) |
+| `lib/auth/session.ts` → `isAdmin` / `requireAdminSession` | Role authorization helpers |
+
 ## orbit-admin — Media (asset library)
 | File | Purpose |
 |------|---------|
@@ -199,8 +212,10 @@ description, images, categories, meta, reviews — versioned) ·
 ## Status snapshot
 
 **Working:** admin auth (login → MFA gate → dashboard → sign-out), product
-create/edit/delete (revisions + audit), product list, media library
-(upload/browse/search/delete + picker), storefront read API, boot migrations,
+create/edit/delete (revisions + audit), product list, user management
+(admin-only, roles, password/MFA reset, self + last-admin guards), media
+library (upload/browse/search/delete + picker), storefront read API, boot
+migrations,
 `/api/health` (admin), RFC 7807 API errors (admin), local Postgres.
 
 **Known gaps:**
@@ -210,6 +225,7 @@ create/edit/delete (revisions + audit), product list, media library
   cross-origin yet (needs a public admin URL).
 - Storefront has **no** Pino logger and **no** `/api/health` (T4 incomplete on
   storefront side).
-- Not built: users management, real TOTP MFA (stubbed), category editing,
-  media reference-tracking (deleting in-use media breaks product images).
+- Not built: real TOTP MFA (stubbed), category editing, media
+  reference-tracking (deleting in-use media breaks product images),
+  role-based restriction of product editing (any signed-in user can edit).
 - Full `docker compose up --build` not yet run end-to-end; no git remote.

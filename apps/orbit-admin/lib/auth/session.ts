@@ -123,3 +123,14 @@ export function pendingMfaStep(
   if (user.mfaEnforced && !mfaVerified) return "/mfa";
   return null;
 }
+
+/** Whether a user holds the admin role (may manage other users). */
+export function isAdmin(user: Pick<User, "role">): boolean {
+  return user.role === "admin";
+}
+
+/** Current session if the user is an admin, otherwise null. */
+export async function requireAdminSession(): Promise<SessionWithUser | null> {
+  const current = await getCurrentSession();
+  return current && isAdmin(current.user) ? current : null;
+}
