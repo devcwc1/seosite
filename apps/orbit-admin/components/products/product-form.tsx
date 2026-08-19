@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Upload } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 
 import {
   createProductAction,
@@ -16,6 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { MediaPicker } from "@/components/media/media-picker";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -154,37 +155,15 @@ export function ProductForm({
     );
   }
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-
-  async function onFilesSelected(fileList: FileList | null) {
-    if (!fileList || fileList.length === 0) return;
-    setUploadError(null);
-    setUploading(true);
-    try {
-      for (const file of Array.from(fileList)) {
-        const body = new FormData();
-        body.append("file", file);
-        const res = await fetch("/api/uploads", { method: "POST", body });
-        if (!res.ok) {
-          const data = (await res.json().catch(() => ({}))) as {
-            error?: string;
-          };
-          throw new Error(data.error ?? "Upload failed");
-        }
-        const { url } = (await res.json()) as { url: string };
-        setImages((prev) => [
-          ...prev,
-          { id: crypto.randomUUID(), url, alt: "" },
-        ]);
-      }
-    } catch (error) {
-      setUploadError(error instanceof Error ? error.message : "Upload failed");
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
+  function addImages(picked: { url: string; alt: string }[]) {
+    setImages((prev) => [
+      ...prev,
+      ...picked.map((p) => ({
+        id: crypto.randomUUID(),
+        url: p.url,
+        alt: p.alt,
+      })),
+    ]);
   }
 
   const reviewsError = Object.entries(errors).find(([k]) =>
@@ -339,27 +318,10 @@ export function ProductForm({
               in the order listed.
             </CardDescription>
           </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
-            multiple
-            className="hidden"
-            onChange={(e) => onFilesSelected(e.target.files)}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={uploading}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Upload className="size-4" aria-hidden />
-            {uploading ? "Uploading…" : "Upload image"}
-          </Button>
+          <MediaPicker onAdd={addImages} />
         </CardHeader>
         <CardContent className="grid gap-4">
-          <FieldError message={uploadError ?? imagesError} />
+          <FieldError message={imagesError} />
           {images.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No images yet. Upload PNG, JPEG, WebP, GIF or AVIF (max 5 MB).

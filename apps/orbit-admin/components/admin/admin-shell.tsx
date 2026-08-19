@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { Boxes, LayoutDashboard, LogOut, Settings, Users } from "lucide-react";
+import {
+  Boxes,
+  Images,
+  LayoutDashboard,
+  LogOut,
+  Settings,
+  Users,
+} from "lucide-react";
 
 import { logoutAction } from "@/lib/auth/actions";
 import { Button } from "@/components/ui/button";
@@ -8,6 +15,7 @@ import type { User } from "@/lib/db/schema";
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/products", label: "Products", icon: Boxes },
+  { href: "/media", label: "Media", icon: Images },
   { href: "/users", label: "Users", icon: Users },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

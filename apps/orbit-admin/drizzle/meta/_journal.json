@@ -15,6 +15,13 @@
       "when": 1787033951572,
       "tag": "0001_add_instock_meta_reviews",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787126315106,
+      "tag": "0002_add_media",
+      "breakpoints": true
     }
   ]
 }

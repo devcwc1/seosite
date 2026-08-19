@@ -306,6 +306,38 @@ export const settings = pgTable("settings", {
 });
 
 /* -------------------------------------------------------------------------- */
+/*  media (asset library — uploaded files, reusable across the app)            */
+/* -------------------------------------------------------------------------- */
+
+export const media = pgTable(
+  "media",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Stored filename on disk; also the last segment of the served URL. */
+    filename: varchar("filename", { length: 255 }).notNull(),
+    /** The uploader's original file name, for display. */
+    originalName: varchar("original_name", { length: 512 }),
+    mimeType: varchar("mime_type", { length: 128 }).notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    /** Pixel dimensions when known (nullable — not always detected). */
+    width: integer("width"),
+    height: integer("height"),
+    /** Default alt text for the asset. */
+    alt: varchar("alt", { length: 512 }),
+    uploadedBy: uuid("uploaded_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("media_filename_unique").on(table.filename),
+    index("media_created_at_idx").on(table.createdAt),
+  ],
+);
+
+/* -------------------------------------------------------------------------- */
 /*  Relations                                                                  */
 /* -------------------------------------------------------------------------- */
 
@@ -370,6 +402,13 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
   }),
 }));
 
+export const mediaRelations = relations(media, ({ one }) => ({
+  uploadedByUser: one(users, {
+    fields: [media.uploadedBy],
+    references: [users.id],
+  }),
+}));
+
 /* -------------------------------------------------------------------------- */
 /*  Inferred types                                                             */
 /* -------------------------------------------------------------------------- */
@@ -390,3 +429,5 @@ export type AuditLog = typeof auditLogs.$inferSelect;
 export type NewAuditLog = typeof auditLogs.$inferInsert;
 export type Setting = typeof settings.$inferSelect;
 export type NewSetting = typeof settings.$inferInsert;
+export type Media = typeof media.$inferSelect;
+export type NewMedia = typeof media.$inferInsert;
