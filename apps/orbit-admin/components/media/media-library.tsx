@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Trash2, Upload } from "lucide-react";
+import { Pencil, Trash2, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { EditMediaDialog } from "@/components/media/edit-media-dialog";
 import { formatBytes } from "@/lib/format";
 import type { MediaAssetDTO } from "@/lib/media/types";
 import {
@@ -21,6 +22,7 @@ export function MediaLibrary() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [editing, setEditing] = useState<MediaAssetDTO | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async (q: string) => {
@@ -169,27 +171,51 @@ export function MediaLibrary() {
                 />
                 <div className="p-2">
                   <p className="truncate text-xs font-medium">
-                    {item.originalName ?? "image"}
+                    {item.title ?? item.originalName ?? "image"}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {item.width}×{item.height} · {formatBytes(item.sizeBytes)}
                   </p>
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Delete"
-                  onClick={() => onDelete(item)}
-                  className="absolute top-1 right-1 bg-background/80 opacity-0 group-hover:opacity-100"
-                >
-                  <Trash2 className="size-4" aria-hidden />
-                </Button>
+                <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Edit"
+                    onClick={() => setEditing(item)}
+                    className="bg-background/80"
+                  >
+                    <Pencil className="size-4" aria-hidden />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Delete"
+                    onClick={() => onDelete(item)}
+                    className="bg-background/80"
+                  >
+                    <Trash2 className="size-4" aria-hidden />
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      <EditMediaDialog
+        asset={editing}
+        onOpenChange={(open) => {
+          if (!open) setEditing(null);
+        }}
+        onSaved={(updated) =>
+          setItems((prev) =>
+            prev.map((m) => (m.id === updated.id ? updated : m)),
+          )
+        }
+      />
     </div>
   );
 }

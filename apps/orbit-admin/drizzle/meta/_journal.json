@@ -29,6 +29,13 @@
       "when": 1787808532839,
       "tag": "0003_add_media_assets",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788430900149,
+      "tag": "0004_lively_rogue",
+      "breakpoints": true
     }
   ]
 }

@@ -8,6 +8,7 @@ export type MediaAssetDTO = {
   mimeType: string;
   format: string;
   originalName: string | null;
+  title: string | null;
   alt: string | null;
   createdAt: string;
 };

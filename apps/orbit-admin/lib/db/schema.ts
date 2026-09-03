@@ -371,6 +371,9 @@ export const mediaAssets = pgTable(
     sizeBytes: integer("size_bytes").notNull().default(0),
     originalName: varchar("original_name", { length: 512 }),
     originalMimeType: varchar("original_mime_type", { length: 128 }),
+    /** Human-friendly display title for the asset (editable). */
+    title: varchar("title", { length: 512 }),
+    /** Default alt text for the asset (editable). */
     alt: varchar("alt", { length: 512 }),
     uploadedBy: uuid("uploaded_by").references(() => users.id, {
       onDelete: "set null",

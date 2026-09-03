@@ -102,6 +102,7 @@ description, images, categories, meta, reviews — versioned) ·
 | `apps/orbit-admin/drizzle/0001_add_instock_meta_reviews.sql` | Adds in_stock, meta, reviews |
 | `apps/orbit-admin/drizzle/0002_add_media.sql` | Adds `media` table (asset library) |
 | `apps/orbit-admin/drizzle/0003_add_media_assets.sql` | ORB-501: `media_assets` + `product_media` |
+| `apps/orbit-admin/drizzle/0004_lively_rogue.sql` | Adds `media_assets.title` (editable metadata) |
 | `apps/orbit-admin/drizzle/meta/*` | Migration snapshots + journal |
 | `apps/orbit-admin/scripts/seed.ts` | Seeds admin user + demo products |
 
@@ -150,7 +151,7 @@ description, images, categories, meta, reviews — versioned) ·
 | `apps/orbit-admin/lib/media/errors.ts` | Typed `UploadError` (code + HTTP status) |
 | `apps/orbit-admin/lib/media/storage.ts` | Content-addressed atomic tmp→rename write (media volume) |
 | `apps/orbit-admin/lib/media/process.ts` | Pipeline: sniff → dedupe → sharp validate/re-encode → store |
-| `apps/orbit-admin/lib/media/assets.ts` | Asset DTO/list/delete (in-use guarded) + product_media links |
+| `apps/orbit-admin/lib/media/assets.ts` | Asset DTO/list/update(title,alt)/delete (in-use guarded) + product_media links |
 | `apps/orbit-admin/app/api/v1/media/upload/route.ts` | `POST` hardened upload (T1) |
 | `apps/orbit-admin/app/api/v1/media/file/[id]/route.ts` | `GET` serve asset (nosniff) |
 | `apps/orbit-admin/lib/media/sniff.test.ts` | Sniffer unit tests |
@@ -160,14 +161,15 @@ description, images, categories, meta, reviews — versioned) ·
 ## orbit-admin — Media library UI
 | File | Purpose |
 |------|---------|
-| `lib/db/schema.ts` → `media_assets` | Hardened asset table (sha256 unique index, storage_key, dimensions) |
+| `lib/db/schema.ts` → `media_assets` | Hardened asset table (sha256 unique index, storage_key, dimensions, editable `title`/`alt`) |
 | `lib/db/schema.ts` → `media` | **Deprecated** pre-ORB-501 table — kept only for existing rows, pending a drop migration |
 | `apps/orbit-admin/lib/media/types.ts` | `MediaAssetDTO` / `ProductMediaItemDTO` wire shapes |
-| `apps/orbit-admin/app/api/v1/media/route.ts` | `GET` list (library + picker) |
-| `apps/orbit-admin/app/api/v1/media/[id]/route.ts` | `DELETE` asset (409 while used by a product) |
+| `apps/orbit-admin/app/api/v1/media/route.ts` | `GET` list (library + picker; searches name/title/alt) |
+| `apps/orbit-admin/app/api/v1/media/[id]/route.ts` | `PATCH` edit title/alt · `DELETE` asset (409 while used by a product) |
 | `apps/orbit-admin/app/(protected)/media/page.tsx` | Media library page |
 | `apps/orbit-admin/components/media/upload-media.ts` | XHR upload client (progress events) |
-| `apps/orbit-admin/components/media/media-library.tsx` | Browse / search / upload / delete UI |
+| `apps/orbit-admin/components/media/media-library.tsx` | Browse / search / upload / edit / delete UI |
+| `apps/orbit-admin/components/media/edit-media-dialog.tsx` | Edit dialog for asset title + alt text |
 | `apps/orbit-admin/components/media/media-picker.tsx` | Reusable picker dialog (used by the product form) |
 | `apps/orbit-admin/media/` | Media volume root — `MEDIA_DIR`, `/srv/orbit-media` in Docker (gitignored) |
 

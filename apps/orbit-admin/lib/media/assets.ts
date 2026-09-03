@@ -28,6 +28,7 @@ export function toAssetDTO(asset: MediaAsset): MediaAssetDTO {
     mimeType: asset.mimeType,
     format: asset.format,
     originalName: asset.originalName,
+    title: asset.title,
     alt: asset.alt,
     createdAt: asset.createdAt.toISOString(),
   };
@@ -42,6 +43,7 @@ export async function listAssets(query?: string): Promise<MediaAssetDTO[]> {
         .where(
           or(
             ilike(mediaAssets.originalName, `%${q}%`),
+            ilike(mediaAssets.title, `%${q}%`),
             ilike(mediaAssets.alt, `%${q}%`),
           ),
         )
@@ -53,6 +55,58 @@ export async function listAssets(query?: string): Promise<MediaAssetDTO[]> {
         .orderBy(desc(mediaAssets.createdAt))
         .limit(300);
   return rows.map(toAssetDTO);
+}
+
+export type UpdateAssetInput = {
+  title?: string | null;
+  alt?: string | null;
+};
+
+export type UpdateAssetResult =
+  | { ok: true; asset: MediaAssetDTO }
+  | { ok: false; error: string };
+
+/** Update the editable metadata (title, alt) of a media asset. */
+export async function updateAsset(
+  id: string,
+  input: UpdateAssetInput,
+  actorId: string | null,
+): Promise<UpdateAssetResult> {
+  const patch: Partial<Pick<MediaAsset, "title" | "alt">> = {};
+  if (input.title !== undefined) {
+    const t = input.title?.trim();
+    patch.title = t ? t : null;
+  }
+  if (input.alt !== undefined) {
+    const a = input.alt?.trim();
+    patch.alt = a ? a : null;
+  }
+
+  if (Object.keys(patch).length === 0) {
+    const [row] = await db
+      .select()
+      .from(mediaAssets)
+      .where(eq(mediaAssets.id, id))
+      .limit(1);
+    if (!row) return { ok: false, error: "Not found." };
+    return { ok: true, asset: toAssetDTO(row) };
+  }
+
+  const [row] = await db
+    .update(mediaAssets)
+    .set(patch)
+    .where(eq(mediaAssets.id, id))
+    .returning();
+  if (!row) return { ok: false, error: "Not found." };
+
+  await recordAudit({
+    actorId,
+    action: "media.updated",
+    target: `media_asset:${id}`,
+    metadata: { fields: Object.keys(patch) },
+  });
+
+  return { ok: true, asset: toAssetDTO(row) };
 }
 
 export type DeleteAssetResult = { ok: boolean; error?: string };

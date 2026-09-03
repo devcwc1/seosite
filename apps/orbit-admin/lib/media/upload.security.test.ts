@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { afterAll, describe, expect, it } from "vitest";
@@ -85,16 +87,23 @@ describe("ORB-501 upload security (integration)", () => {
     const first = await upload(
       new File([bytes], "a.png", { type: "image/png" }),
     );
-    const before = (await db.select().from(mediaAssets)).length;
+    // Scope the count to this asset's sha256 so concurrent inserts from other
+    // test files can't perturb it — dedupe means it stays exactly 1.
+    const sha = createHash("sha256").update(bytes).digest("hex");
+    const countBySha = async () =>
+      (await db.select().from(mediaAssets).where(eq(mediaAssets.sha256, sha)))
+        .length;
+    const before = await countBySha();
     const second = await processUpload(
       new File([bytes], "b.png", { type: "image/png" }),
       null,
     );
-    const after = (await db.select().from(mediaAssets)).length;
+    const after = await countBySha();
 
     expect(second.alreadyInLibrary).toBe(true);
     expect(second.asset.id).toBe(first.asset.id);
-    expect(after).toBe(before);
+    expect(before).toBe(1);
+    expect(after).toBe(1);
   });
 
   it("rejects a PDF renamed .jpg (magic-byte mismatch)", async () => {
