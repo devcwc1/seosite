@@ -3,13 +3,13 @@ import "server-only";
 import { eq, or } from "drizzle-orm";
 
 import { recordAudit } from "@/lib/audit";
+import { getProductGallery, setProductGallery } from "@/lib/media/assets";
 import { db } from "@/lib/db";
 import {
   productContent,
   productContentRevisions,
   products,
   type ProductContentSnapshot,
-  type ProductImage,
   type ProductMeta,
   type ProductReview,
   type ProductStatus,
@@ -21,7 +21,7 @@ export type MutationResult =
   | { ok: true; id: string }
   | { ok: false; errors: Record<string, string> };
 
-/** Data shape used to prefill the edit form. */
+/** Everything the edit form needs to prefill, gallery included. */
 export type ProductEditData = {
   id: string;
   title: string;
@@ -34,7 +34,7 @@ export type ProductEditData = {
   currency: string;
   inStock: boolean;
   stockQuantity: number;
-  images: ProductImage[];
+  images: { assetId: string; url: string; alt: string }[];
   meta: ProductMeta;
   reviews: ProductReview[];
 };
@@ -45,14 +45,6 @@ function toMeta(input: ProductParsed): ProductMeta {
   if (input.meta.description) meta.description = input.meta.description;
   if (input.meta.keywords) meta.keywords = input.meta.keywords;
   return meta;
-}
-
-function toImages(input: ProductParsed): ProductImage[] {
-  return input.images.map((image, index) => ({
-    url: image.url,
-    position: index + 1,
-    ...(image.alt ? { alt: image.alt } : {}),
-  }));
 }
 
 function toReviews(input: ProductParsed): ProductReview[] {
@@ -66,11 +58,17 @@ function toReviews(input: ProductParsed): ProductReview[] {
   }));
 }
 
+function galleryItems(input: ProductParsed): { assetId: string; alt: string | null }[] {
+  return input.images.map((image) => ({
+    assetId: image.assetId,
+    alt: image.alt || null,
+  }));
+}
+
 function buildSnapshot(
   input: ProductParsed,
   meta: ProductMeta,
   reviews: ProductReview[],
-  images: ProductContentSnapshot["images"],
   categories: ProductContentSnapshot["categories"],
   locale: string,
 ): ProductContentSnapshot {
@@ -78,7 +76,8 @@ function buildSnapshot(
     title: input.title,
     shortInfo: input.shortInfo || null,
     description: input.description || null,
-    images,
+    // Images live in product_media now; the content snapshot no longer carries them.
+    images: [],
     categories,
     meta,
     reviews,
@@ -117,7 +116,6 @@ export async function createProduct(
   const stockQuantity = input.inStock ? input.stockQuantity : 0;
   const meta = toMeta(input);
   const reviews = toReviews(input);
-  const images = toImages(input);
 
   const id = await db.transaction(async (tx) => {
     const [product] = await tx
@@ -142,7 +140,7 @@ export async function createProduct(
         title: input.title,
         shortInfo: input.shortInfo || null,
         description: input.description || null,
-        images,
+        images: [],
         categories: [],
         meta,
         reviews,
@@ -157,10 +155,12 @@ export async function createProduct(
       contentId: content.id,
       productId: product.id,
       version: 1,
-      data: buildSnapshot(input, meta, reviews, images, [], "en"),
+      data: buildSnapshot(input, meta, reviews, [], "en"),
       changeNote: "Created",
       editedBy: actorId,
     });
+
+    await setProductGallery(tx, product.id, galleryItems(input));
 
     await tx
       .update(products)
@@ -199,7 +199,6 @@ export async function updateProduct(
   const stockQuantity = input.inStock ? input.stockQuantity : 0;
   const meta = toMeta(input);
   const reviews = toReviews(input);
-  const images = toImages(input);
 
   await db.transaction(async (tx) => {
     const [content] = await tx
@@ -221,7 +220,7 @@ export async function updateProduct(
           title: input.title,
           shortInfo: input.shortInfo || null,
           description: input.description || null,
-          images,
+          images: [],
           meta,
           reviews,
           version: nextVersion,
@@ -238,7 +237,7 @@ export async function updateProduct(
           title: input.title,
           shortInfo: input.shortInfo || null,
           description: input.description || null,
-          images,
+          images: [],
           categories,
           meta,
           reviews,
@@ -255,10 +254,12 @@ export async function updateProduct(
       contentId,
       productId: id,
       version: nextVersion,
-      data: buildSnapshot(input, meta, reviews, images, categories, locale),
+      data: buildSnapshot(input, meta, reviews, categories, locale),
       changeNote: "Updated",
       editedBy: actorId,
     });
+
+    await setProductGallery(tx, id, galleryItems(input));
 
     await tx
       .update(products)
@@ -297,7 +298,7 @@ export async function deleteProduct(
     .limit(1);
   if (!existing) return { ok: false, errors: { form: "Product not found." } };
 
-  // Content + revisions cascade via their FKs to products.id.
+  // product_media, content and revisions cascade via their FKs to products.id.
   await db.delete(products).where(eq(products.id, id));
 
   await recordAudit({
@@ -310,7 +311,7 @@ export async function deleteProduct(
   return { ok: true, id };
 }
 
-/** Load a product + its live content, shaped for the edit form. */
+/** Load a product + its live content (scalars), shaped for the edit form. */
 export async function getProductForEdit(
   id: string,
 ): Promise<ProductEditData | null> {
@@ -327,6 +328,8 @@ export async function getProductForEdit(
     .where(eq(productContent.productId, id))
     .limit(1);
 
+  const gallery = await getProductGallery(id);
+
   return {
     id: product.id,
     title: content?.title ?? "",
@@ -339,7 +342,11 @@ export async function getProductForEdit(
     currency: product.currency,
     inStock: product.inStock,
     stockQuantity: product.stockQuantity,
-    images: content?.images ?? [],
+    images: gallery.map((item) => ({
+      assetId: item.assetId,
+      url: item.url,
+      alt: item.alt ?? "",
+    })),
     meta: content?.meta ?? {},
     reviews: content?.reviews ?? [],
   };

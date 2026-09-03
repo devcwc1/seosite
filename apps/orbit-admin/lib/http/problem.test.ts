@@ -13,7 +13,7 @@ describe("problem (RFC 7807)", () => {
 
   it("uses the standard title for a status and defaults type to about:blank", async () => {
     const res = problemFor(401, "Sign in required", {
-      instance: "/api/uploads",
+      instance: "/api/v1/media",
     });
     const body = await res.json();
     expect(body).toEqual({
@@ -21,7 +21,7 @@ describe("problem (RFC 7807)", () => {
       title: "Unauthorized",
       status: 401,
       detail: "Sign in required",
-      instance: "/api/uploads",
+      instance: "/api/v1/media",
     });
   });
 

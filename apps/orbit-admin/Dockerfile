@@ -19,6 +19,11 @@ RUN npm ci
 FROM node:22-alpine AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+# `next build` imports every route module to read its config; `lib/db` refuses to
+# load without DATABASE_URL. Nothing connects during the build (all DB-backed
+# routes are force-dynamic), so a placeholder is enough — the real URL is
+# injected at runtime by compose.
+ENV DATABASE_URL=postgres://build:build@127.0.0.1:5432/build
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build -w orbit-admin
@@ -39,6 +44,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/apps/orbit-admin/.next/static ./a
 COPY --from=builder --chown=nextjs:nodejs /app/apps/orbit-admin/public ./apps/orbit-admin/public
 # Migrations are read at runtime by the boot migration runner (./drizzle).
 COPY --from=builder --chown=nextjs:nodejs /app/apps/orbit-admin/drizzle ./apps/orbit-admin/drizzle
+
+# Media volume mount point (ORB-501): deliberately outside /app so originals
+# never sit anywhere the server could execute or statically serve them.
+ENV MEDIA_DIR=/srv/orbit-media
+RUN mkdir -p /srv/orbit-media && chown -R nextjs:nodejs /srv/orbit-media
 
 USER nextjs
 EXPOSE 3000

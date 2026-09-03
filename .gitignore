@@ -33,6 +33,7 @@ npm-debug.log*
 
 # uploaded media (served from disk / a mounted volume)
 apps/orbit-admin/uploads/
+apps/orbit-admin/media/
 
 # os
 .DS_Store

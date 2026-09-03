@@ -306,9 +306,16 @@ export const settings = pgTable("settings", {
 });
 
 /* -------------------------------------------------------------------------- */
-/*  media (asset library — uploaded files, reusable across the app)            */
+/*  media (DEPRECATED — pre-ORB-501 unhardened uploads)                        */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Superseded by `media_assets` (ORB-501). The upload/serve routes and helpers
+ * are gone; the table is kept only so existing rows survive until a follow-up
+ * drop migration retires it along with the legacy `uploads` volume.
+ *
+ * @deprecated Use `mediaAssets`.
+ */
 export const media = pgTable(
   "media",
   {
@@ -334,6 +341,82 @@ export const media = pgTable(
   (table) => [
     uniqueIndex("media_filename_unique").on(table.filename),
     index("media_created_at_idx").on(table.createdAt),
+  ],
+);
+
+/* -------------------------------------------------------------------------- */
+/*  media_assets (ORB-501 — hardened, content-addressed, deduped image assets) */
+/* -------------------------------------------------------------------------- */
+
+export const mediaAssets = pgTable(
+  "media_assets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** SHA-256 (hex) of the original uploaded bytes — the dedupe key. */
+    sha256: varchar("sha256", { length: 64 }).notNull(),
+    /**
+     * Content-addressed relative path inside the media volume, e.g.
+     * `products/ab/cd/<uuid>.webp`. Null when the asset is an external URL
+     * (only used by the non-destructive backfill of pre-existing images).
+     */
+    storageKey: varchar("storage_key", { length: 512 }),
+    /** Set only for backfilled pre-existing external images (e.g. seed URLs). */
+    externalUrl: varchar("external_url", { length: 2048 }),
+    /** Stored (re-encoded) format + mime — always webp for new uploads. */
+    format: varchar("format", { length: 16 }).notNull(),
+    mimeType: varchar("mime_type", { length: 128 }).notNull(),
+    width: integer("width").notNull(),
+    height: integer("height").notNull(),
+    /** Byte size of the stored (re-encoded) file. */
+    sizeBytes: integer("size_bytes").notNull().default(0),
+    originalName: varchar("original_name", { length: 512 }),
+    originalMimeType: varchar("original_mime_type", { length: 128 }),
+    alt: varchar("alt", { length: 512 }),
+    uploadedBy: uuid("uploaded_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("media_assets_sha256_unique").on(table.sha256),
+    index("media_assets_created_at_idx").on(table.createdAt),
+  ],
+);
+
+/* -------------------------------------------------------------------------- */
+/*  product_media (links products to media_assets, ordered gallery)            */
+/* -------------------------------------------------------------------------- */
+
+export const productMedia = pgTable(
+  "product_media",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    // Restrict: an asset that is still linked to a product cannot be deleted.
+    mediaAssetId: uuid("media_asset_id")
+      .notNull()
+      .references(() => mediaAssets.id, { onDelete: "restrict" }),
+    /** Zero-based gallery position. */
+    position: integer("position").notNull().default(0),
+    /** Optional per-product alt override; falls back to the asset's alt. */
+    alt: varchar("alt", { length: 512 }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("product_media_product_asset_unique").on(
+      table.productId,
+      table.mediaAssetId,
+    ),
+    index("product_media_product_position_idx").on(
+      table.productId,
+      table.position,
+    ),
   ],
 );
 
@@ -402,6 +485,25 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
   }),
 }));
 
+export const mediaAssetsRelations = relations(mediaAssets, ({ one, many }) => ({
+  uploadedByUser: one(users, {
+    fields: [mediaAssets.uploadedBy],
+    references: [users.id],
+  }),
+  productLinks: many(productMedia),
+}));
+
+export const productMediaRelations = relations(productMedia, ({ one }) => ({
+  product: one(products, {
+    fields: [productMedia.productId],
+    references: [products.id],
+  }),
+  asset: one(mediaAssets, {
+    fields: [productMedia.mediaAssetId],
+    references: [mediaAssets.id],
+  }),
+}));
+
 export const mediaRelations = relations(media, ({ one }) => ({
   uploadedByUser: one(users, {
     fields: [media.uploadedBy],
@@ -431,3 +533,7 @@ export type Setting = typeof settings.$inferSelect;
 export type NewSetting = typeof settings.$inferInsert;
 export type Media = typeof media.$inferSelect;
 export type NewMedia = typeof media.$inferInsert;
+export type MediaAsset = typeof mediaAssets.$inferSelect;
+export type NewMediaAsset = typeof mediaAssets.$inferInsert;
+export type ProductMedia = typeof productMedia.$inferSelect;
+export type NewProductMedia = typeof productMedia.$inferInsert;

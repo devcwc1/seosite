@@ -6,23 +6,30 @@ import { Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBytes } from "@/lib/format";
-import type { MediaDTO } from "@/lib/media/types";
+import type { MediaAssetDTO } from "@/lib/media/types";
+import {
+  ACCEPTED_IMAGE_TYPES,
+  uploadMedia,
+} from "@/components/media/upload-media";
 
 export function MediaLibrary() {
-  const [items, setItems] = useState<MediaDTO[]>([]);
+  const [items, setItems] = useState<MediaAssetDTO[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async (q: string) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/media?q=${encodeURIComponent(q)}`);
+      const res = await fetch(`/api/v1/media?q=${encodeURIComponent(q)}`);
       if (!res.ok) throw new Error("Failed to load media");
-      setItems((await res.json()) as MediaDTO[]);
+      setItems((await res.json()) as MediaAssetDTO[]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load media");
     } finally {
@@ -35,39 +42,48 @@ export function MediaLibrary() {
     return () => clearTimeout(t);
   }, [query, load]);
 
-  async function onUpload(files: FileList | null) {
-    if (!files || files.length === 0) return;
+  async function onFiles(files: FileList | File[] | null) {
+    const list = files ? Array.from(files) : [];
+    if (list.length === 0) return;
     setUploading(true);
     setError(null);
+    setNotice(null);
     try {
-      for (const file of Array.from(files)) {
-        const body = new FormData();
-        body.append("file", file);
-        const res = await fetch("/api/media", { method: "POST", body });
-        if (!res.ok) {
-          const j = (await res.json().catch(() => ({}))) as {
-            detail?: string;
-            title?: string;
-          };
-          throw new Error(j.detail ?? j.title ?? "Upload failed");
-        }
+      let duplicates = 0;
+      for (const file of list) {
+        setProgress(0);
+        const { alreadyInLibrary } = await uploadMedia(file, {
+          onProgress: setProgress,
+        });
+        if (alreadyInLibrary) duplicates += 1;
+      }
+      if (duplicates > 0) {
+        setNotice(
+          duplicates === 1
+            ? "That image was already in the library — the existing asset was reused."
+            : `${duplicates} images were already in the library — the existing assets were reused.`,
+        );
       }
       await load(query);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed");
     } finally {
       setUploading(false);
+      setProgress(0);
       if (fileRef.current) fileRef.current.value = "";
     }
   }
 
-  async function onDelete(item: MediaDTO) {
-    const label = item.originalName ?? item.filename;
+  async function onDelete(item: MediaAssetDTO) {
+    const label = item.originalName ?? item.id;
     if (!window.confirm(`Delete "${label}"? This removes the file permanently.`))
       return;
     try {
-      const res = await fetch(`/api/media/${item.id}`, { method: "DELETE" });
-      if (!res.ok && res.status !== 204) throw new Error("Delete failed");
+      const res = await fetch(`/api/v1/media/${item.id}`, { method: "DELETE" });
+      if (!res.ok && res.status !== 204) {
+        const body = (await res.json().catch(() => ({}))) as { detail?: string };
+        throw new Error(body.detail ?? "Delete failed");
+      }
       setItems((prev) => prev.filter((m) => m.id !== item.id));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Delete failed");
@@ -86,10 +102,10 @@ export function MediaLibrary() {
         <input
           ref={fileRef}
           type="file"
-          accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+          accept={ACCEPTED_IMAGE_TYPES}
           multiple
           className="hidden"
-          onChange={(e) => onUpload(e.target.files)}
+          onChange={(e) => onFiles(e.target.files)}
         />
         <Button
           type="button"
@@ -99,53 +115,81 @@ export function MediaLibrary() {
           className="ml-auto"
         >
           <Upload className="size-4" aria-hidden />
-          {uploading ? "Uploading…" : "Upload"}
+          {uploading ? `Uploading ${progress}%` : "Upload"}
         </Button>
       </div>
 
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No media yet. Upload PNG, JPEG, WebP, GIF or AVIF (max 5 MB).
-        </p>
-      ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {items.map((item) => (
-            <div
-              key={item.id}
-              className="group relative overflow-hidden rounded-lg border bg-background"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={item.url}
-                alt={item.alt ?? item.originalName ?? ""}
-                className="aspect-square w-full bg-muted object-cover"
-              />
-              <div className="p-2">
-                <p className="truncate text-xs font-medium">
-                  {item.originalName ?? item.filename}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {formatBytes(item.sizeBytes)}
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Delete"
-                onClick={() => onDelete(item)}
-                className="absolute top-1 right-1 bg-background/80 opacity-0 group-hover:opacity-100"
-              >
-                <Trash2 className="size-4" aria-hidden />
-              </Button>
-            </div>
-          ))}
+      {uploading ? (
+        <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
+          <div
+            className="h-full bg-primary transition-[width]"
+            style={{ width: `${progress}%` }}
+          />
         </div>
-      )}
+      ) : null}
+
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {notice ? (
+        <p className="text-sm text-muted-foreground">{notice}</p>
+      ) : null}
+
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          void onFiles(e.dataTransfer.files);
+        }}
+        className={`rounded-lg border border-dashed p-4 transition-colors ${
+          dragOver ? "border-primary bg-primary/5" : "border-border"
+        }`}
+      >
+        {loading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : items.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            Drop images here or use Upload. JPEG, PNG, WebP or AVIF, max 15 MB.
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            {items.map((item) => (
+              <div
+                key={item.id}
+                className="group relative overflow-hidden rounded-lg border bg-background"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={item.url}
+                  alt={item.alt ?? item.originalName ?? ""}
+                  className="aspect-square w-full bg-muted object-cover"
+                />
+                <div className="p-2">
+                  <p className="truncate text-xs font-medium">
+                    {item.originalName ?? "image"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {item.width}×{item.height} · {formatBytes(item.sizeBytes)}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Delete"
+                  onClick={() => onDelete(item)}
+                  className="absolute top-1 right-1 bg-background/80 opacity-0 group-hover:opacity-100"
+                >
+                  <Trash2 className="size-4" aria-hidden />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

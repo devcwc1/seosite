@@ -10,7 +10,7 @@ export type ProductReviewPayload = {
   createdAt: string;
 };
 
-export type ProductImagePayload = { url: string; alt: string };
+export type ProductImagePayload = { assetId: string; alt: string };
 
 export type ProductFormPayload = {
   title: string;
@@ -29,16 +29,8 @@ export type ProductFormPayload = {
 };
 
 const imageSchema = z.object({
-  // Either an absolute http(s) URL or a site-relative uploaded path (/api/uploads/…).
-  url: z
-    .string()
-    .trim()
-    .min(1, "Image is required")
-    .max(2048)
-    .refine(
-      (value) => /^https?:\/\//i.test(value) || value.startsWith("/"),
-      "Must be an uploaded image or a valid URL",
-    ),
+  // References a hardened media_assets row (ORB-501) rather than a raw URL.
+  assetId: z.string().uuid("Invalid image reference"),
   alt: z.string().trim().max(300),
 });
 

@@ -16,7 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { MediaPicker } from "@/components/media/media-picker";
+import { MediaPicker, type PickedMedia } from "@/components/media/media-picker";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,6 +50,7 @@ type ReviewDraft = {
 
 type ImageDraft = {
   id: string;
+  assetId: string;
   url: string;
   alt: string;
 };
@@ -66,7 +67,7 @@ export type ProductFormInitial = {
   currency: string;
   inStock: boolean;
   stockQuantity: number;
-  images: { url: string; alt?: string }[];
+  images: { assetId: string; url: string; alt?: string }[];
   meta: { title?: string; description?: string; keywords?: string };
   reviews: ReviewDraft[];
 };
@@ -119,6 +120,7 @@ export function ProductForm({
   const [images, setImages] = useState<ImageDraft[]>(
     initial?.images.map((image) => ({
       id: crypto.randomUUID(),
+      assetId: image.assetId,
       url: image.url,
       alt: image.alt ?? "",
     })) ?? [],
@@ -155,11 +157,12 @@ export function ProductForm({
     );
   }
 
-  function addImages(picked: { url: string; alt: string }[]) {
+  function addImages(picked: PickedMedia[]) {
     setImages((prev) => [
       ...prev,
       ...picked.map((p) => ({
         id: crypto.randomUUID(),
+        assetId: p.assetId,
         url: p.url,
         alt: p.alt,
       })),
@@ -187,9 +190,10 @@ export function ProductForm({
       currency: values.currency,
       inStock: values.inStock,
       stockQuantity: values.stockQuantity,
-      images: images
-        .filter((image) => image.url.trim() !== "")
-        .map((image) => ({ url: image.url.trim(), alt: image.alt })),
+      images: images.map((image) => ({
+        assetId: image.assetId,
+        alt: image.alt,
+      })),
       meta: {
         title: values.metaTitle,
         description: values.metaDescription,
@@ -324,7 +328,7 @@ export function ProductForm({
           <FieldError message={imagesError} />
           {images.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No images yet. Upload PNG, JPEG, WebP, GIF or AVIF (max 5 MB).
+              No images yet. Upload PNG, JPEG, WebP or AVIF (max 15 MB).
             </p>
           ) : (
             images.map((image) => (

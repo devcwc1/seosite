@@ -50,7 +50,9 @@
 
 `users` · `sessions` · `products` · `product_content` (title, short info,
 description, images, categories, meta, reviews — versioned) ·
-`product_content_revisions` · `audit_logs` · `settings` · `media`
+`product_content_revisions` · `audit_logs` · `settings` · `media` ·
+`media_assets` (ORB-501: sha256-deduped, content-addressed) · `product_media`
+(product↔asset gallery)
 
 ---
 
@@ -99,6 +101,7 @@ description, images, categories, meta, reviews — versioned) ·
 | `apps/orbit-admin/drizzle/0000_init.sql` | Initial migration (7 tables) |
 | `apps/orbit-admin/drizzle/0001_add_instock_meta_reviews.sql` | Adds in_stock, meta, reviews |
 | `apps/orbit-admin/drizzle/0002_add_media.sql` | Adds `media` table (asset library) |
+| `apps/orbit-admin/drizzle/0003_add_media_assets.sql` | ORB-501: `media_assets` + `product_media` |
 | `apps/orbit-admin/drizzle/meta/*` | Migration snapshots + journal |
 | `apps/orbit-admin/scripts/seed.ts` | Seeds admin user + demo products |
 
@@ -139,20 +142,34 @@ description, images, categories, meta, reviews — versioned) ·
 | `apps/orbit-admin/components/users/delete-user-button.tsx` | Delete button (guards self) |
 | `lib/auth/session.ts` → `isAdmin` / `requireAdminSession` | Role authorization helpers |
 
-## orbit-admin — Media (asset library)
+## orbit-admin — Hardened media intake (ORB-501)
 | File | Purpose |
 |------|---------|
-| `lib/db/schema.ts` → `media` | Asset table (filename, mime, size, alt, uploaded_by) |
-| `apps/orbit-admin/lib/media/types.ts` | `MediaDTO` (client-safe wire shape) |
-| `apps/orbit-admin/lib/media/mutations.ts` | createFromFile / list / delete (DB record + disk) |
-| `apps/orbit-admin/lib/uploads.ts` | Low-level disk storage, allowed types, size cap |
-| `apps/orbit-admin/app/api/media/route.ts` | `GET` list · `POST` upload |
-| `apps/orbit-admin/app/api/media/[id]/route.ts` | `DELETE` asset (row + file) |
-| `apps/orbit-admin/app/api/uploads/[name]/route.ts` | `GET` serve stored file |
+| `apps/orbit-admin/lib/media/constants.ts` | Allowlist + bounds as code constants (15 MB, 200–8000px) |
+| `apps/orbit-admin/lib/media/sniff.ts` | Magic-byte MIME sniffing (JPEG/PNG/WebP/AVIF; SVG flagged) |
+| `apps/orbit-admin/lib/media/errors.ts` | Typed `UploadError` (code + HTTP status) |
+| `apps/orbit-admin/lib/media/storage.ts` | Content-addressed atomic tmp→rename write (media volume) |
+| `apps/orbit-admin/lib/media/process.ts` | Pipeline: sniff → dedupe → sharp validate/re-encode → store |
+| `apps/orbit-admin/lib/media/assets.ts` | Asset DTO/list/delete (in-use guarded) + product_media links |
+| `apps/orbit-admin/app/api/v1/media/upload/route.ts` | `POST` hardened upload (T1) |
+| `apps/orbit-admin/app/api/v1/media/file/[id]/route.ts` | `GET` serve asset (nosniff) |
+| `apps/orbit-admin/lib/media/sniff.test.ts` | Sniffer unit tests |
+| `apps/orbit-admin/lib/media/upload.security.test.ts` | Security suite (T4): polyglots, mismatch, oversize, bombs, dedupe, payload-strip |
+| `apps/orbit-admin/lib/products/gallery.test.ts` | Gallery round-trip: edit-form prefill + resubmit keeps `product_media` |
+
+## orbit-admin — Media library UI
+| File | Purpose |
+|------|---------|
+| `lib/db/schema.ts` → `media_assets` | Hardened asset table (sha256 unique index, storage_key, dimensions) |
+| `lib/db/schema.ts` → `media` | **Deprecated** pre-ORB-501 table — kept only for existing rows, pending a drop migration |
+| `apps/orbit-admin/lib/media/types.ts` | `MediaAssetDTO` / `ProductMediaItemDTO` wire shapes |
+| `apps/orbit-admin/app/api/v1/media/route.ts` | `GET` list (library + picker) |
+| `apps/orbit-admin/app/api/v1/media/[id]/route.ts` | `DELETE` asset (409 while used by a product) |
 | `apps/orbit-admin/app/(protected)/media/page.tsx` | Media library page |
+| `apps/orbit-admin/components/media/upload-media.ts` | XHR upload client (progress events) |
 | `apps/orbit-admin/components/media/media-library.tsx` | Browse / search / upload / delete UI |
-| `apps/orbit-admin/components/media/media-picker.tsx` | Reusable picker dialog (used by product form) |
-| `apps/orbit-admin/uploads/` | Stored files (runtime, gitignored, Docker volume) |
+| `apps/orbit-admin/components/media/media-picker.tsx` | Reusable picker dialog (used by the product form) |
+| `apps/orbit-admin/media/` | Media volume root — `MEDIA_DIR`, `/srv/orbit-media` in Docker (gitignored) |
 
 ## orbit-admin — API routes & error handling
 | File | Purpose |
@@ -161,7 +178,7 @@ description, images, categories, meta, reviews — versioned) ·
 | `apps/orbit-admin/app/api/health/route.ts` | Readiness probe (503 → 200) |
 | `apps/orbit-admin/app/api/storefront/products/route.ts` | Public product list API |
 | `apps/orbit-admin/app/api/storefront/products/[slug]/route.ts` | Public product-by-slug API |
-| `apps/orbit-admin/lib/storefront/products.ts` | Read model (published products) |
+| `apps/orbit-admin/lib/storefront/products.ts` | Read model (published products + `product_media` galleries) |
 | `apps/orbit-admin/lib/storefront/mapper.ts` | Row → `@orbit/next` DTO mapper |
 
 ## orbit-admin — Logging & utils
@@ -212,20 +229,32 @@ description, images, categories, meta, reviews — versioned) ·
 ## Status snapshot
 
 **Working:** admin auth (login → MFA gate → dashboard → sign-out), product
-create/edit/delete (revisions + audit), product list, user management
-(admin-only, roles, password/MFA reset, self + last-admin guards), media
-library (upload/browse/search/delete + picker), storefront read API, boot
-migrations,
+create/edit/delete (revisions + audit; the gallery is now prefilled on edit and
+survives a resubmit), product list, user management (admin-only, roles,
+password/MFA reset, self + last-admin guards), media library
+(upload/browse/search/delete + picker), storefront read API, boot migrations,
 `/api/health` (admin), RFC 7807 API errors (admin), local Postgres.
+**ORB-501 hardened media intake** is complete and wired into the UI: sniff →
+type/extension agreement → dimension bounds → sharp re-encode → sha256 dedupe →
+atomic content-addressed write, with an XHR progress UI in the library and
+picker. The legacy unhardened `POST /api/media`, `/api/uploads/[name]` and
+`lib/uploads.ts` are **removed**, so the hardened endpoint is the only intake
+path. The public storefront read model sources galleries from `product_media`
+too, so admin edits keep showing up on the storefront. Verified against a live
+Postgres: 39 tests green, `tsc --noEmit` clean, `next build` clean.
 
 **Known gaps:**
-- Media library built but **not yet live-verified** (Docker engine was down when
-  added — migration `0002` needs applying and a smoke test).
-- Uploaded images use relative `/api/uploads` URLs the storefront can't render
-  cross-origin yet (needs a public admin URL).
+- No **E2E** harness (no Playwright) — ORB-501's QA note asks for an
+  editor-driven upload test. The admin UI has also not had a browser smoke test
+  (it needs a human to sign in).
+- Caddy does not serve the media volume yet (**ORB-103**); assets stream through
+  `/api/v1/media/file/[id]`, which sets `nosniff` + immutable caching.
+- The deprecated `media` table and the old `uploads` Docker volume still hold
+  legacy rows/files; a drop migration + volume prune is the follow-up.
+- Storefront can't render `/api/v1/media/file/...` URLs cross-origin yet (needs
+  a public admin URL).
 - Storefront has **no** Pino logger and **no** `/api/health` (T4 incomplete on
   storefront side).
-- Not built: real TOTP MFA (stubbed), category editing, media
-  reference-tracking (deleting in-use media breaks product images),
+- Not built: real TOTP MFA (stubbed), category editing,
   role-based restriction of product editing (any signed-in user can edit).
 - Full `docker compose up --build` not yet run end-to-end; no git remote.

@@ -32,7 +32,8 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER:-orbit}:${POSTGRES_PASSWORD:-orbit}@postgres:5432/${POSTGRES_DB:-orbit_admin}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      UPLOAD_DIR: /app/apps/orbit-admin/uploads
+      # ORB-501 media volume — outside /app, never on an executable path.
+      MEDIA_DIR: /srv/orbit-media
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,7 +42,7 @@ services:
     expose:
       - "3000"
     volumes:
-      - uploads:/app/apps/orbit-admin/uploads
+      - media:/srv/orbit-media
     healthcheck:
       # Becomes healthy only once boot migrations complete (/api/health -> 200).
       test:
@@ -110,7 +111,7 @@ services:
 
 volumes:
   pgdata:
-  uploads:
+  media:
   caddy_data:
   caddy_config:
 

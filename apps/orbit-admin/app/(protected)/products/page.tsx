@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 
@@ -14,7 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { db } from "@/lib/db";
-import { productContent, products } from "@/lib/db/schema";
+import { mediaAssets, productContent, productMedia, products } from "@/lib/db/schema";
 import { formatPrice } from "@/lib/format";
 
 const STATUS_VARIANT = {
@@ -22,6 +22,8 @@ const STATUS_VARIANT = {
   draft: "secondary",
   archived: "outline",
 } as const;
+
+type Thumb = { url: string; alt: string | null };
 
 export default async function ProductsPage() {
   const rows = await db
@@ -34,11 +36,48 @@ export default async function ProductsPage() {
       inStock: products.inStock,
       stock: products.stockQuantity,
       title: productContent.title,
-      images: productContent.images,
+      // Legacy jsonb gallery — fallback for rows not yet backfilled.
+      legacyImages: productContent.images,
     })
     .from(products)
     .leftJoin(productContent, eq(productContent.id, products.currentContentId))
     .orderBy(desc(products.createdAt));
+
+  // Primary image per product from product_media (authoritative, ORB-501).
+  const primaryByProduct = new Map<string, Thumb>();
+  const ids = rows.map((r) => r.id);
+  if (ids.length > 0) {
+    const media = await db
+      .select({
+        productId: productMedia.productId,
+        assetId: mediaAssets.id,
+        externalUrl: mediaAssets.externalUrl,
+        linkAlt: productMedia.alt,
+        assetAlt: mediaAssets.alt,
+        position: productMedia.position,
+      })
+      .from(productMedia)
+      .innerJoin(mediaAssets, eq(mediaAssets.id, productMedia.mediaAssetId))
+      .where(inArray(productMedia.productId, ids))
+      .orderBy(asc(productMedia.position));
+    for (const m of media) {
+      if (!primaryByProduct.has(m.productId)) {
+        primaryByProduct.set(m.productId, {
+          url: m.externalUrl ?? `/api/v1/media/file/${m.assetId}`,
+          alt: m.linkAlt ?? m.assetAlt,
+        });
+      }
+    }
+  }
+
+  function thumbFor(row: (typeof rows)[number]): Thumb | null {
+    const primary = primaryByProduct.get(row.id);
+    if (primary) return primary;
+    const legacy = row.legacyImages
+      ?.slice()
+      .sort((a, b) => a.position - b.position)[0];
+    return legacy ? { url: legacy.url, alt: legacy.alt ?? null } : null;
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -78,65 +117,63 @@ export default async function ProductsPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell className="font-medium">
-                    <div className="flex items-center gap-3">
-                      {(() => {
-                        const img = row.images
-                          ?.slice()
-                          .sort((a, b) => a.position - b.position)[0];
-                        return img ? (
+              rows.map((row) => {
+                const thumb = thumbFor(row);
+                return (
+                  <TableRow key={row.id}>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-3">
+                        {thumb ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
-                            src={img.url}
-                            alt={img.alt ?? row.title ?? ""}
+                            src={thumb.url}
+                            alt={thumb.alt ?? row.title ?? ""}
                             className="size-9 rounded border bg-muted object-cover"
                           />
                         ) : (
                           <div className="size-9 rounded border bg-muted" />
-                        );
-                      })()}
-                      <span>{row.title ?? "—"}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {row.sku}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={STATUS_VARIANT[row.status]}>
-                      {row.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatPrice(row.priceCents, row.currency)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {row.inStock ? (
-                      row.stock
-                    ) : (
-                      <span className="text-destructive">Out of stock</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Link
-                        href={`/products/${row.id}/edit`}
-                        className={buttonVariants({
-                          variant: "ghost",
-                          size: "sm",
-                        })}
-                      >
-                        Edit
-                      </Link>
-                      <DeleteProductButton
-                        id={row.id}
-                        name={row.title ?? row.sku}
-                      />
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
+                        )}
+                        <span>{row.title ?? "—"}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {row.sku}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={STATUS_VARIANT[row.status]}>
+                        {row.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatPrice(row.priceCents, row.currency)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {row.inStock ? (
+                        row.stock
+                      ) : (
+                        <span className="text-destructive">Out of stock</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <Link
+                          href={`/products/${row.id}/edit`}
+                          className={buttonVariants({
+                            variant: "ghost",
+                            size: "sm",
+                          })}
+                        >
+                          Edit
+                        </Link>
+                        <DeleteProductButton
+                          id={row.id}
+                          name={row.title ?? row.sku}
+                        />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

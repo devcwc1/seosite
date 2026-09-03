@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ImagePlus, Upload } from "lucide-react";
 
+import {
+  ACCEPTED_IMAGE_TYPES,
+  uploadMedia,
+} from "@/components/media/upload-media";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,29 +17,34 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import type { MediaDTO } from "@/lib/media/types";
+import type { MediaAssetDTO } from "@/lib/media/types";
 
-/** Opens the media library to pick existing assets or upload new ones. */
+export type PickedMedia = { assetId: string; url: string; alt: string };
+
+/** Pick existing assets or upload new ones (drag-drop + progress). */
 export function MediaPicker({
   onAdd,
 }: {
-  onAdd: (items: { url: string; alt: string }[]) => void;
+  onAdd: (items: PickedMedia[]) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [items, setItems] = useState<MediaDTO[]>([]);
+  const [items, setItems] = useState<MediaAssetDTO[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/media");
+      const res = await fetch("/api/v1/media");
       if (!res.ok) throw new Error("Failed to load media");
-      setItems((await res.json()) as MediaDTO[]);
+      setItems((await res.json()) as MediaAssetDTO[]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load media");
     } finally {
@@ -59,36 +68,34 @@ export function MediaPicker({
     });
   }
 
-  async function onUpload(files: FileList | null) {
-    if (!files || files.length === 0) return;
+  async function onFiles(files: FileList | File[] | null) {
+    const list = files ? Array.from(files) : [];
+    if (list.length === 0) return;
     setUploading(true);
     setError(null);
     try {
-      const createdIds: string[] = [];
-      for (const file of Array.from(files)) {
-        const body = new FormData();
-        body.append("file", file);
-        const res = await fetch("/api/media", { method: "POST", body });
-        if (!res.ok) {
-          const j = (await res.json().catch(() => ({}))) as {
-            detail?: string;
-            title?: string;
-          };
-          throw new Error(j.detail ?? j.title ?? "Upload failed");
-        }
-        const dto = (await res.json()) as MediaDTO;
-        createdIds.push(dto.id);
+      const newlySelected = new Set(selected);
+      let duplicates = 0;
+      for (const file of list) {
+        setProgress(0);
+        const { asset, alreadyInLibrary } = await uploadMedia(file, {
+          onProgress: setProgress,
+        });
+        if (alreadyInLibrary) duplicates += 1;
+        newlySelected.add(asset.id);
       }
+      setNotice(
+        duplicates > 0
+          ? "Already in the library — the existing asset was selected."
+          : null,
+      );
       await load();
-      setSelected((prev) => {
-        const next = new Set(prev);
-        createdIds.forEach((id) => next.add(id));
-        return next;
-      });
+      setSelected(newlySelected);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed");
     } finally {
       setUploading(false);
+      setProgress(0);
       if (fileRef.current) fileRef.current.value = "";
     }
   }
@@ -96,7 +103,7 @@ export function MediaPicker({
   function confirmAdd() {
     const chosen = items
       .filter((m) => selected.has(m.id))
-      .map((m) => ({ url: m.url, alt: m.alt ?? "" }));
+      .map((m) => ({ assetId: m.id, url: m.url, alt: m.alt ?? "" }));
     onAdd(chosen);
     setOpen(false);
   }
@@ -123,10 +130,10 @@ export function MediaPicker({
             <input
               ref={fileRef}
               type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+              accept={ACCEPTED_IMAGE_TYPES}
               multiple
               className="hidden"
-              onChange={(e) => onUpload(e.target.files)}
+              onChange={(e) => onFiles(e.target.files)}
             />
             <Button
               type="button"
@@ -136,21 +143,47 @@ export function MediaPicker({
               onClick={() => fileRef.current?.click()}
             >
               <Upload className="size-4" aria-hidden />
-              {uploading ? "Uploading…" : "Upload new"}
+              {uploading ? `Uploading ${progress}%` : "Upload new"}
             </Button>
             <span className="text-sm text-muted-foreground">
               {selected.size} selected
             </span>
           </div>
 
+          {uploading ? (
+            <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
+              <div
+                className="h-full bg-primary transition-[width]"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          ) : null}
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          {notice ? (
+            <p className="text-sm text-muted-foreground">{notice}</p>
+          ) : null}
 
-          <div className="max-h-[50vh] overflow-y-auto">
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              void onFiles(e.dataTransfer.files);
+            }}
+            className={cn(
+              "max-h-[50vh] overflow-y-auto rounded-lg border border-dashed p-2 transition-colors",
+              dragOver ? "border-primary bg-primary/5" : "border-border",
+            )}
+          >
             {loading ? (
-              <p className="text-sm text-muted-foreground">Loading…</p>
+              <p className="p-4 text-sm text-muted-foreground">Loading…</p>
             ) : items.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No media yet — upload some.
+              <p className="p-6 text-center text-sm text-muted-foreground">
+                Drop images here or upload. JPEG, PNG, WebP or AVIF, max 15 MB.
               </p>
             ) : (
               <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
