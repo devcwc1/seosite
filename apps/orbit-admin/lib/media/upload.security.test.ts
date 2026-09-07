@@ -79,6 +79,30 @@ describe("ORB-501 upload security (integration)", () => {
     expect(r.asset.height).toBe(300);
   });
 
+  it("stores the file at a content-addressed key derived from the original sha256", async () => {
+    const r = await upload(
+      await makeImageFile({ format: "jpeg", width: 300, height: 300 }),
+    );
+    const [row] = await db
+      .select()
+      .from(mediaAssets)
+      .where(eq(mediaAssets.id, r.asset.id))
+      .limit(1);
+    expect(row).toBeTruthy();
+
+    const sha = row!.sha256;
+    // products/<sha[0:2]>/<sha[2:4]>/<uuid>.webp — sharded by the content hash.
+    expect(row!.storageKey).toMatch(
+      new RegExp(`^products/${sha.slice(0, 2)}/${sha.slice(2, 4)}/[0-9a-f-]+\\.webp$`),
+    );
+
+    // The stored bytes are the re-encoded WebP, so their hash must NOT equal
+    // the dedupe key — proving dedupe keys on the ORIGINAL upload, not output.
+    const stored = await readStored(row!.storageKey!);
+    expect(stored.length).toBeGreaterThan(0);
+    expect(createHash("sha256").update(stored).digest("hex")).not.toBe(sha);
+  });
+
   it("dedupes identical bytes without creating a new row", async () => {
     const bytes = new Uint8Array(
       await (
