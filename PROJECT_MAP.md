@@ -152,12 +152,14 @@ description, images, categories, meta, reviews — versioned) ·
 | `apps/orbit-admin/lib/media/sniff.ts` | Magic-byte MIME sniffing (JPEG/PNG/WebP/AVIF; SVG flagged) |
 | `apps/orbit-admin/lib/media/errors.ts` | Typed `UploadError` (code + HTTP status) |
 | `apps/orbit-admin/lib/media/storage.ts` | Content-addressed atomic tmp→rename write (media volume) |
+| `apps/orbit-admin/lib/media/stream.ts` | `readCappedStream`: hard-capped body streaming (defeats spoofed Content-Length) |
 | `apps/orbit-admin/lib/media/process.ts` | Pipeline: sniff → dedupe → sharp validate/re-encode → store |
 | `apps/orbit-admin/lib/media/assets.ts` | Asset DTO/list/update(title,alt)/delete (in-use guarded) + product_media link/unlink |
-| `apps/orbit-admin/app/api/v1/media/upload/route.ts` | `POST` hardened upload (T1) |
+| `apps/orbit-admin/app/api/v1/media/upload/route.ts` | `POST` hardened upload (T1): multipart streamed under a hard cap, Zod productId, validation chain |
 | `apps/orbit-admin/app/api/v1/media/file/[id]/route.ts` | `GET` serve asset (nosniff) |
 | `apps/orbit-admin/lib/media/sniff.test.ts` | Sniffer unit tests |
-| `apps/orbit-admin/lib/media/upload.security.test.ts` | Security suite (T4): polyglots, mismatch, oversize, bombs, dedupe, payload-strip |
+| `apps/orbit-admin/lib/media/stream.test.ts` | Capped-stream + multipart round-trip tests (T1) |
+| `apps/orbit-admin/lib/media/upload.security.test.ts` | Security suite (T4): polyglots, mismatch, oversize, bombs, dedupe, payload-strip, content-addressed key |
 | `apps/orbit-admin/lib/products/gallery.test.ts` | Gallery round-trip: edit-form prefill + resubmit keeps `product_media` |
 
 ## orbit-admin — Media library UI
