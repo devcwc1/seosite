@@ -6,6 +6,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { db, pool } from "@/lib/db";
 import { mediaAssets } from "@/lib/db/schema";
+import { MAX_UPLOAD_BYTES } from "@/lib/media/constants";
 import { UploadError } from "@/lib/media/errors";
 import { processUpload } from "@/lib/media/process";
 import { deleteStored, readStored } from "@/lib/media/storage";
@@ -168,6 +169,18 @@ describe("ORB-501 upload security (integration)", () => {
         null,
       ),
     ).rejects.toMatchObject({ code: "dimensions_out_of_bounds" });
+  });
+
+  it("rejects a decompression bomb (small file, enormous canvas)", async () => {
+    // ~1 MB on disk (well under the 15 MB cap) but 9000×9000 = 81M pixels,
+    // over MAX_INPUT_PIXELS (64M). sharp's limitInputPixels guard throws while
+    // reading metadata — before any full decode — so a bomb can never allocate
+    // its canvas. process.ts maps that to `not_an_image`.
+    const bomb = await makeImageFile({ format: "png", width: 9000, height: 9000 });
+    expect(bomb.size).toBeLessThan(MAX_UPLOAD_BYTES);
+    await expect(processUpload(bomb, null)).rejects.toMatchObject({
+      code: "not_an_image",
+    });
   });
 
   it("strips an appended payload via re-encode", async () => {
