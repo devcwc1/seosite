@@ -4,6 +4,10 @@ import { revalidatePath } from "next/cache";
 
 import { getCurrentSession } from "@/lib/auth/session";
 import {
+  linkAssetToProduct,
+  unlinkAssetFromProduct,
+} from "@/lib/media/assets";
+import {
   createProduct,
   deleteProduct,
   updateProduct,
@@ -49,6 +53,56 @@ export async function updateProductAction(
     revalidatePath(`/products/${id}/edit`);
   }
   return result;
+}
+
+export type GalleryActionResult = { ok: boolean; error?: string };
+
+/** Link already-uploaded library assets to a product (detail-page quick add). */
+export async function addProductImagesAction(
+  productId: string,
+  assetIds: string[],
+): Promise<GalleryActionResult> {
+  const session = await getCurrentSession();
+  if (!session) return { ok: false, error: "Not authenticated." };
+  if (session.user.role === "viewer") {
+    return { ok: false, error: "Viewers cannot edit product media." };
+  }
+
+  try {
+    for (const assetId of assetIds) {
+      await linkAssetToProduct(productId, assetId);
+    }
+  } catch {
+    return { ok: false, error: "Failed to add images." };
+  }
+
+  revalidatePath(`/products/${productId}`);
+  revalidatePath(`/products/${productId}/edit`);
+  revalidatePath("/products");
+  return { ok: true };
+}
+
+/** Remove one asset from a product's gallery (detail-page quick remove). */
+export async function removeProductImageAction(
+  productId: string,
+  assetId: string,
+): Promise<GalleryActionResult> {
+  const session = await getCurrentSession();
+  if (!session) return { ok: false, error: "Not authenticated." };
+  if (session.user.role === "viewer") {
+    return { ok: false, error: "Viewers cannot edit product media." };
+  }
+
+  try {
+    await unlinkAssetFromProduct(productId, assetId);
+  } catch {
+    return { ok: false, error: "Failed to remove image." };
+  }
+
+  revalidatePath(`/products/${productId}`);
+  revalidatePath(`/products/${productId}/edit`);
+  revalidatePath("/products");
+  return { ok: true };
 }
 
 export async function deleteProductAction(

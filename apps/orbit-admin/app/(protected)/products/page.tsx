@@ -133,7 +133,12 @@ export default async function ProductsPage() {
                         ) : (
                           <div className="size-9 rounded border bg-muted" />
                         )}
-                        <span>{row.title ?? "—"}</span>
+                        <Link
+                          href={`/products/${row.id}`}
+                          className="hover:underline"
+                        >
+                          {row.title ?? "—"}
+                        </Link>
                       </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
@@ -156,6 +161,15 @@ export default async function ProductsPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
+                        <Link
+                          href={`/products/${row.id}`}
+                          className={buttonVariants({
+                            variant: "ghost",
+                            size: "sm",
+                          })}
+                        >
+                          View
+                        </Link>
                         <Link
                           href={`/products/${row.id}/edit`}
                           className={buttonVariants({

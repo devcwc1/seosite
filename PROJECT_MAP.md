@@ -123,11 +123,13 @@ description, images, categories, meta, reviews — versioned) ·
 |------|---------|
 | `apps/orbit-admin/lib/products/validation.ts` | Zod schema, payload types, `slugify` |
 | `apps/orbit-admin/lib/products/mutations.ts` | create/update/delete/getForEdit (tx, revisions, audit) |
-| `apps/orbit-admin/app/(protected)/products/actions.ts` | Server actions |
-| `apps/orbit-admin/app/(protected)/products/page.tsx` | Product list (thumbnails, edit/delete) |
+| `apps/orbit-admin/app/(protected)/products/actions.ts` | Server actions (create/update/delete + add/remove product image) |
+| `apps/orbit-admin/app/(protected)/products/page.tsx` | Product list (thumbnails, view/edit/delete) |
 | `apps/orbit-admin/app/(protected)/products/new/page.tsx` | New product page |
+| `apps/orbit-admin/app/(protected)/products/[id]/page.tsx` | Product detail (overview + quick-add gallery manager) |
 | `apps/orbit-admin/app/(protected)/products/[id]/edit/page.tsx` | Edit product page |
 | `apps/orbit-admin/components/products/product-form.tsx` | Shared form (details, pricing/stock, images, meta, reviews) |
+| `apps/orbit-admin/components/products/product-gallery-manager.tsx` | Detail-page gallery: upload-&-attach (productId auto-assoc), add from library, remove |
 | `apps/orbit-admin/components/products/delete-product-button.tsx` | Delete button (client) |
 
 ## orbit-admin — Users (management, admin-only)
@@ -151,7 +153,7 @@ description, images, categories, meta, reviews — versioned) ·
 | `apps/orbit-admin/lib/media/errors.ts` | Typed `UploadError` (code + HTTP status) |
 | `apps/orbit-admin/lib/media/storage.ts` | Content-addressed atomic tmp→rename write (media volume) |
 | `apps/orbit-admin/lib/media/process.ts` | Pipeline: sniff → dedupe → sharp validate/re-encode → store |
-| `apps/orbit-admin/lib/media/assets.ts` | Asset DTO/list/update(title,alt)/delete (in-use guarded) + product_media links |
+| `apps/orbit-admin/lib/media/assets.ts` | Asset DTO/list/update(title,alt)/delete (in-use guarded) + product_media link/unlink |
 | `apps/orbit-admin/app/api/v1/media/upload/route.ts` | `POST` hardened upload (T1) |
 | `apps/orbit-admin/app/api/v1/media/file/[id]/route.ts` | `GET` serve asset (nosniff) |
 | `apps/orbit-admin/lib/media/sniff.test.ts` | Sniffer unit tests |

@@ -4,7 +4,10 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { db, pool } from "@/lib/db";
 import { mediaAssets, productMedia } from "@/lib/db/schema";
-import { linkAssetToProduct } from "@/lib/media/assets";
+import {
+  linkAssetToProduct,
+  unlinkAssetFromProduct,
+} from "@/lib/media/assets";
 import { processUpload } from "@/lib/media/process";
 import { deleteStored } from "@/lib/media/storage";
 import { getStorefrontProduct } from "@/lib/storefront/products";
@@ -158,5 +161,25 @@ describe("product gallery round-trip (ORB-501)", () => {
     expect(
       links.find((link) => link.mediaAssetId === third)?.position,
     ).toBe(2);
+  });
+
+  it("unlinks a single asset without touching the rest (idempotent)", async () => {
+    const id = productIds[0];
+    const before = await db
+      .select()
+      .from(productMedia)
+      .where(eq(productMedia.productId, id!));
+    const target = before.at(-1)!.mediaAssetId;
+
+    // What removeProductImageAction does on the product detail page.
+    await unlinkAssetFromProduct(id!, target);
+    await unlinkAssetFromProduct(id!, target); // idempotent
+
+    const after = await db
+      .select()
+      .from(productMedia)
+      .where(eq(productMedia.productId, id!));
+    expect(after).toHaveLength(before.length - 1);
+    expect(after.find((link) => link.mediaAssetId === target)).toBeUndefined();
   });
 });

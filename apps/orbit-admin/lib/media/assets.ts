@@ -1,6 +1,6 @@
 import "server-only";
 
-import { asc, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 
 import { recordAudit } from "@/lib/audit";
 import { db } from "@/lib/db";
@@ -190,6 +190,21 @@ export async function linkAssetToProduct(
     .insert(productMedia)
     .values({ productId, mediaAssetId: assetId, position: nextPosition })
     .onConflictDoNothing();
+}
+
+/** Remove a single asset from a product's gallery (idempotent). */
+export async function unlinkAssetFromProduct(
+  productId: string,
+  assetId: string,
+): Promise<void> {
+  await db
+    .delete(productMedia)
+    .where(
+      and(
+        eq(productMedia.productId, productId),
+        eq(productMedia.mediaAssetId, assetId),
+      ),
+    );
 }
 
 /**
