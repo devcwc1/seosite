@@ -19,7 +19,24 @@ export function formatPrice(
   }).format(product.priceCents / 100);
 }
 
+/** A product's images in display order — `position` is authoritative. */
+export function galleryImages(product: StorefrontProduct) {
+  return [...product.images].sort((a, b) => a.position - b.position);
+}
+
 /** The image the catalog and PDP lead with, by the DTO's own ordering. */
 export function primaryImage(product: StorefrontProduct) {
-  return [...product.images].sort((a, b) => a.position - b.position)[0] ?? null;
+  return galleryImages(product)[0] ?? null;
+}
+
+/**
+ * The category a product is filed under. Exactly one should be primary; fall
+ * back to the first so the label never disappears on inconsistent data.
+ */
+export function primaryCategory(product: StorefrontProduct) {
+  return (
+    product.categories.find((category) => category.isPrimary) ??
+    product.categories[0] ??
+    null
+  );
 }

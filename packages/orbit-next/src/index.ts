@@ -40,6 +40,20 @@ export type OrbitClientOptions = {
    * `ORBIT_API_URL`, then to `http://localhost:3000`.
    */
   baseUrl?: string;
+  /**
+   * Origin the browser should load images from. Orbit returns root-relative
+   * image paths (`/api/v1/media/file/<id>`), which only resolve on the admin's
+   * own origin — a consumer app served from anywhere else must prefix them.
+   *
+   * Falls back to `ORBIT_ASSET_BASE_URL`, then to `baseUrl`. That default is
+   * right in development, where the admin is directly reachable, but not in
+   * production, where `baseUrl` is usually a private network address: set
+   * `ORBIT_ASSET_BASE_URL` to the admin's public origin there.
+   *
+   * Pass an empty string once assets are served from the consumer's own origin
+   * (e.g. a reverse proxy mapping the media path) to keep the paths relative.
+   */
+  assetBaseUrl?: string;
   /** Injectable fetch, mainly for testing. Defaults to the global `fetch`. */
   fetch?: typeof fetch;
   /** Next.js ISR revalidation window in seconds. Defaults to 60. */
@@ -66,6 +80,27 @@ const DEFAULT_BASE_URL = "http://localhost:3000";
 const DEFAULT_REVALIDATE = 60;
 
 /**
+ * Point a product's images at an origin the browser can actually reach. Only
+ * root-relative paths are rewritten; absolute URLs (images backfilled from an
+ * external source) are already resolvable and are left untouched.
+ */
+function withResolvedImages(
+  product: StorefrontProduct,
+  assetBaseUrl: string,
+): StorefrontProduct {
+  if (assetBaseUrl === "") return product;
+
+  return {
+    ...product,
+    images: product.images.map((image) =>
+      image.url.startsWith("/")
+        ? { ...image, url: `${assetBaseUrl}${image.url}` }
+        : image,
+    ),
+  };
+}
+
+/**
  * Create an Orbit content client. This is the only supported way for a
  * consumer app to read Orbit data.
  */
@@ -76,6 +111,11 @@ export function createOrbitClient(
     options.baseUrl ??
     process.env.ORBIT_API_URL ??
     DEFAULT_BASE_URL
+  ).replace(/\/+$/, "");
+  const assetBaseUrl = (
+    options.assetBaseUrl ??
+    process.env.ORBIT_ASSET_BASE_URL ??
+    baseUrl
   ).replace(/\/+$/, "");
   const doFetch = options.fetch ?? fetch;
   const revalidate = options.revalidate ?? DEFAULT_REVALIDATE;
@@ -95,14 +135,20 @@ export function createOrbitClient(
   }
 
   return {
-    listProducts() {
-      return request<StorefrontProduct[]>("/api/storefront/products");
+    async listProducts() {
+      const products = await request<StorefrontProduct[]>(
+        "/api/storefront/products",
+      );
+      return products.map((product) =>
+        withResolvedImages(product, assetBaseUrl),
+      );
     },
     async getProduct(slug: string) {
       try {
-        return await request<StorefrontProduct>(
+        const product = await request<StorefrontProduct>(
           `/api/storefront/products/${encodeURIComponent(slug)}`,
         );
+        return withResolvedImages(product, assetBaseUrl);
       } catch (error) {
         if (error instanceof OrbitApiError && error.status === 404) {
           return null;

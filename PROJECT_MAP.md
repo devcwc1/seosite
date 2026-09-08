@@ -216,17 +216,22 @@ description, images, categories, meta, reviews — versioned) ·
 ## @orbit/next (shared data SDK)
 | File | Purpose |
 |------|---------|
-| `packages/orbit-next/src/index.ts` | `createOrbitClient`, DTOs, `OrbitApiError` |
-| `packages/orbit-next/package.json`, `tsconfig.json` | Package config |
+| `packages/orbit-next/src/index.ts` | `createOrbitClient`, DTOs, `OrbitApiError`, image URL resolution |
+| `packages/orbit-next/src/index.test.ts` | Asset URL resolution + 404-to-null contract tests |
+| `packages/orbit-next/package.json`, `tsconfig.json` | Package config (`npm test -w @orbit/next`) |
 
 ## storefront (public site)
 | File | Purpose |
 |------|---------|
-| `apps/storefront/lib/orbit.ts` | Orbit client + `formatPrice`/`primaryImage` |
-| `apps/storefront/app/page.tsx` | Catalog (lists products via `@orbit/next`) |
-| `apps/storefront/app/products/[id]/page.tsx` | Product detail page |
-| `apps/storefront/app/cart/page.tsx` | Cart placeholder |
-| `apps/storefront/app/layout.tsx`, `globals.css` | Layout + styles |
+| `apps/storefront/lib/orbit.ts` | Orbit client + `formatPrice` / `galleryImages` / `primaryImage` / `primaryCategory` |
+| `apps/storefront/app/page.tsx` | Catalog — header band + product grid |
+| `apps/storefront/app/products/[id]/page.tsx` | Product detail — gallery, price, availability, spec list |
+| `apps/storefront/app/cart/page.tsx` | Cart placeholder (no cart contract in the SDK yet) |
+| `apps/storefront/app/layout.tsx` | Shell: sticky header, footer, Inter via `next/font` |
+| `apps/storefront/app/globals.css` | **Design system** — "Clinical Vitality" tokens as Tailwind v4 `@theme` |
+| `apps/storefront/components/product-card.tsx` | Catalog card (level-1 surface, hover lift) |
+| `apps/storefront/components/stock-badge.tsx` | Availability pill (teal in stock / soft red out) |
+| `apps/storefront/components/icons.tsx` | Inline SVG glyphs (no icon font) |
 | `apps/storefront/eslint.config.mjs` | Isolation rule — bans direct DB/ORM imports |
 | `apps/storefront/next.config.ts` | Standalone + `transpilePackages: ["@orbit/next"]` |
 
@@ -257,10 +262,20 @@ Postgres: 39 tests green, `tsc --noEmit` clean, `next build` clean.
   `/api/v1/media/file/[id]`, which sets `nosniff` + immutable caching.
 - The deprecated `media` table and the old `uploads` Docker volume still hold
   legacy rows/files; a drop migration + volume prune is the follow-up.
-- Storefront can't render `/api/v1/media/file/...` URLs cross-origin yet (needs
-  a public admin URL).
+- Storefront images resolve through `@orbit/next`: the admin returns
+  root-relative `/api/v1/media/file/<id>` paths, and the client prefixes them
+  with `ORBIT_ASSET_BASE_URL` (compose derives it from `ADMIN_DOMAIN`; host dev
+  falls back to `ORBIT_API_URL`). Set it to `""` once a proxy serves the media
+  path on the storefront's own origin (**ORB-103**). Verified end to end in dev.
 - Storefront has **no** Pino logger and **no** `/api/health` (T4 incomplete on
   storefront side).
+- Storefront has no cart or checkout: `@orbit/next` is read-only, so the PDP's
+  "Add to cart" is deliberately disabled and says so. Needs an order contract
+  on the admin side first.
+- Storefront design tokens come from the Stitch project "Apotheek 24/7 Website
+  Redesign" (theme *Clinical Vitality*). Note that Tailwind v4 resolves
+  `max-w-<name>` against the spacing scale first, so `max-w-sm|md|lg|xl` now
+  collide with the design's spacing names — use explicit lengths there.
 - Not built: real TOTP MFA (stubbed), category editing,
   role-based restriction of product editing (any signed-in user can edit).
 - Full `docker compose up --build` not yet run end-to-end; no git remote.

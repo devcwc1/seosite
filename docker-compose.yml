@@ -66,6 +66,9 @@ services:
       NODE_ENV: production
       # Storefront reads Orbit data only via @orbit/next, pointed at the admin.
       ORBIT_API_URL: http://orbit-admin:3000
+      # Image URLs are rendered in the browser, which cannot reach the private
+      # address above — resolve them against the admin's public origin.
+      ORBIT_ASSET_BASE_URL: https://${ADMIN_DOMAIN:-admin.localhost}
     depends_on:
       orbit-admin:
         condition: service_healthy
