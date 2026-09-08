@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { getCurrentSession, isWriter } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { mediaAssets, productContent, productMedia, products } from "@/lib/db/schema";
 import { formatPrice } from "@/lib/format";
@@ -26,6 +27,9 @@ const STATUS_VARIANT = {
 type Thumb = { url: string; alt: string | null };
 
 export default async function ProductsPage() {
+  const session = await getCurrentSession();
+  const canWrite = !!session && isWriter(session.user);
+
   const rows = await db
     .select({
       id: products.id,
@@ -88,10 +92,12 @@ export default async function ProductsPage() {
             {rows.length} {rows.length === 1 ? "product" : "products"}
           </p>
         </div>
-        <Link href="/products/new" className={buttonVariants()}>
-          <Plus className="size-4" aria-hidden />
-          New product
-        </Link>
+        {canWrite ? (
+          <Link href="/products/new" className={buttonVariants()}>
+            <Plus className="size-4" aria-hidden />
+            New product
+          </Link>
+        ) : null}
       </div>
 
       <div className="rounded-lg border bg-background">
@@ -170,19 +176,23 @@ export default async function ProductsPage() {
                         >
                           View
                         </Link>
-                        <Link
-                          href={`/products/${row.id}/edit`}
-                          className={buttonVariants({
-                            variant: "ghost",
-                            size: "sm",
-                          })}
-                        >
-                          Edit
-                        </Link>
-                        <DeleteProductButton
-                          id={row.id}
-                          name={row.title ?? row.sku}
-                        />
+                        {canWrite ? (
+                          <>
+                            <Link
+                              href={`/products/${row.id}/edit`}
+                              className={buttonVariants({
+                                variant: "ghost",
+                                size: "sm",
+                              })}
+                            >
+                              Edit
+                            </Link>
+                            <DeleteProductButton
+                              id={row.id}
+                              name={row.title ?? row.sku}
+                            />
+                          </>
+                        ) : null}
                       </div>
                     </TableCell>
                   </TableRow>

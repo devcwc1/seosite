@@ -25,9 +25,12 @@ export type GalleryImage = { assetId: string; url: string; alt: string };
 export function ProductGalleryManager({
   productId,
   images,
+  canWrite,
 }: {
   productId: string;
   images: GalleryImage[];
+  /** Viewers see the same gallery without any way to change it. */
+  canWrite: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -98,29 +101,47 @@ export function ProductGalleryManager({
     });
   }
 
+  // Only a writer gets drop targets; for a viewer the area is just a frame.
+  const dropHandlers = canWrite
+    ? {
+        onDragOver: (e: React.DragEvent) => {
+          e.preventDefault();
+          setDragOver(true);
+        },
+        onDragLeave: () => setDragOver(false),
+        onDrop: (e: React.DragEvent) => {
+          e.preventDefault();
+          setDragOver(false);
+          void onFiles(e.dataTransfer.files);
+        },
+      }
+    : {};
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-3">
-        <input
-          ref={fileRef}
-          type="file"
-          accept={ACCEPTED_IMAGE_TYPES}
-          multiple
-          className="hidden"
-          onChange={(e) => onFiles(e.target.files)}
-        />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={busy}
-          onClick={() => fileRef.current?.click()}
-        >
-          <Upload className="size-4" aria-hidden />
-          {uploading ? `Uploading ${progress}%` : "Upload & attach"}
-        </Button>
-        <MediaPicker onAdd={onAddFromLibrary} />
-      </div>
+      {canWrite ? (
+        <div className="flex items-center gap-3">
+          <input
+            ref={fileRef}
+            type="file"
+            accept={ACCEPTED_IMAGE_TYPES}
+            multiple
+            className="hidden"
+            onChange={(e) => onFiles(e.target.files)}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => fileRef.current?.click()}
+          >
+            <Upload className="size-4" aria-hidden />
+            {uploading ? `Uploading ${progress}%` : "Upload & attach"}
+          </Button>
+          <MediaPicker onAdd={onAddFromLibrary} />
+        </div>
+      ) : null}
 
       {uploading ? (
         <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
@@ -137,24 +158,16 @@ export function ProductGalleryManager({
       ) : null}
 
       <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragOver(false);
-          void onFiles(e.dataTransfer.files);
-        }}
-        className={`rounded-lg border border-dashed p-4 transition-colors ${
-          dragOver ? "border-primary bg-primary/5" : "border-border"
-        }`}
+        {...dropHandlers}
+        className={`rounded-lg border p-4 transition-colors ${
+          canWrite ? "border-dashed" : ""
+        } ${dragOver ? "border-primary bg-primary/5" : "border-border"}`}
       >
         {images.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            Drop images here to attach them to this product, or use the buttons
-            above. JPEG, PNG, WebP or AVIF, max 15 MB.
+            {canWrite
+              ? "Drop images here to attach them to this product, or use the buttons above. JPEG, PNG, WebP or AVIF, max 15 MB."
+              : "No images are attached to this product."}
           </p>
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
@@ -169,17 +182,19 @@ export function ProductGalleryManager({
                   alt={image.alt || "Product image"}
                   className="aspect-square w-full bg-muted object-cover"
                 />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Remove image"
-                  disabled={busy}
-                  onClick={() => onRemove(image)}
-                  className="absolute top-1 right-1 bg-background/80 opacity-0 group-hover:opacity-100"
-                >
-                  <Trash2 className="size-4" aria-hidden />
-                </Button>
+                {canWrite ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Remove image"
+                    disabled={busy}
+                    onClick={() => onRemove(image)}
+                    className="absolute top-1 right-1 bg-background/80 opacity-0 group-hover:opacity-100"
+                  >
+                    <Trash2 className="size-4" aria-hidden />
+                  </Button>
+                ) : null}
               </div>
             ))}
           </div>
