@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { getCurrentSession } from "@/lib/auth/session";
+import { getCurrentSession, isWriter } from "@/lib/auth/session";
 import {
   linkAssetToProduct,
   unlinkAssetFromProduct,
@@ -19,11 +19,17 @@ import {
   type ProductFormPayload,
 } from "@/lib/products/validation";
 
+/** Shown to a viewer who reaches a write action anyway (e.g. a stale page). */
+const VIEWER_MESSAGE = "Viewers cannot change products.";
+
 export async function createProductAction(
   payload: ProductFormPayload,
 ): Promise<MutationResult> {
   const session = await getCurrentSession();
   if (!session) return { ok: false, errors: { form: "Not authenticated." } };
+  if (!isWriter(session.user)) {
+    return { ok: false, errors: { form: VIEWER_MESSAGE } };
+  }
 
   const parsed = productInputSchema.safeParse(payload);
   if (!parsed.success) {
@@ -41,6 +47,9 @@ export async function updateProductAction(
 ): Promise<MutationResult> {
   const session = await getCurrentSession();
   if (!session) return { ok: false, errors: { form: "Not authenticated." } };
+  if (!isWriter(session.user)) {
+    return { ok: false, errors: { form: VIEWER_MESSAGE } };
+  }
 
   const parsed = productInputSchema.safeParse(payload);
   if (!parsed.success) {
@@ -64,7 +73,7 @@ export async function addProductImagesAction(
 ): Promise<GalleryActionResult> {
   const session = await getCurrentSession();
   if (!session) return { ok: false, error: "Not authenticated." };
-  if (session.user.role === "viewer") {
+  if (!isWriter(session.user)) {
     return { ok: false, error: "Viewers cannot edit product media." };
   }
 
@@ -89,7 +98,7 @@ export async function removeProductImageAction(
 ): Promise<GalleryActionResult> {
   const session = await getCurrentSession();
   if (!session) return { ok: false, error: "Not authenticated." };
-  if (session.user.role === "viewer") {
+  if (!isWriter(session.user)) {
     return { ok: false, error: "Viewers cannot edit product media." };
   }
 
@@ -110,6 +119,9 @@ export async function deleteProductAction(
 ): Promise<MutationResult> {
   const session = await getCurrentSession();
   if (!session) return { ok: false, errors: { form: "Not authenticated." } };
+  if (!isWriter(session.user)) {
+    return { ok: false, errors: { form: VIEWER_MESSAGE } };
+  }
 
   const result = await deleteProduct(id, session.user.id);
   if (result.ok) revalidatePath("/products");

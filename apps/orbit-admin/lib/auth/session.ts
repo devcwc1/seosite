@@ -129,6 +129,15 @@ export function isAdmin(user: Pick<User, "role">): boolean {
   return user.role === "admin";
 }
 
+/**
+ * Whether a user may change content — products, galleries, media. Viewers are
+ * read-only; admins and editors both write. Every content mutation asks this
+ * one question, so the rule lives here rather than in each action.
+ */
+export function isWriter(user: Pick<User, "role">): boolean {
+  return user.role !== "viewer";
+}
+
 /** Current session if the user is an admin, otherwise null. */
 export async function requireAdminSession(): Promise<SessionWithUser | null> {
   const current = await getCurrentSession();

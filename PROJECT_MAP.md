@@ -276,6 +276,9 @@ Postgres: 39 tests green, `tsc --noEmit` clean, `next build` clean.
   Redesign" (theme *Clinical Vitality*). Note that Tailwind v4 resolves
   `max-w-<name>` against the spacing scale first, so `max-w-sm|md|lg|xl` now
   collide with the design's spacing names — use explicit lengths there.
-- Not built: real TOTP MFA (stubbed), category editing,
-  role-based restriction of product editing (any signed-in user can edit).
+- Not built: real TOTP MFA (stubbed), category editing.
+- Role policy lives in `lib/auth/session.ts` (`isWriter` / `isAdmin`): viewers
+  are read-only across product mutations, gallery links and media routes; admins
+  alone manage users. The write **controls are still rendered** for viewers —
+  they get a clear refusal on submit rather than a hidden button.
 - Full `docker compose up --build` not yet run end-to-end; no git remote.
