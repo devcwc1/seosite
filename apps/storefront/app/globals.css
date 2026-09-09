@@ -48,6 +48,11 @@
   --color-error-container: #ffdad6;
   --color-on-error-container: #93000a;
 
+  /* Neutrals the home design uses directly, outside the tonal ramp. */
+  --color-border-subtle: #e5e7eb;
+  --color-surface-muted: #f9fafb;
+  --color-success-green: #059669;
+
   /* -- type scale --------------------------------------------------------- */
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", sans-serif;
@@ -65,6 +70,14 @@
   --text-headline-md: 24px;
   --text-headline-md--line-height: 32px;
   --text-headline-md--font-weight: 600;
+
+  --text-headline-sm: 18px;
+  --text-headline-sm--line-height: 24px;
+  --text-headline-sm--font-weight: 600;
+
+  --text-price-display: 20px;
+  --text-price-display--line-height: 24px;
+  --text-price-display--font-weight: 700;
 
   --text-body-lg: 18px;
   --text-body-lg--line-height: 28px;
@@ -87,6 +100,9 @@
   --spacing-md: 24px;
   --spacing-lg: 40px;
   --spacing-xl: 64px;
+  /* The home design names its page rhythm separately from the 8pt steps. */
+  --spacing-gutter: 24px;
+  --spacing-section-gap: 64px;
 
   /* -- shape -------------------------------------------------------------- */
   --radius-sm: 0.25rem;
@@ -142,6 +158,37 @@
       transform: none;
     }
   }
+}
+
+/*
+ * Hero band. The design lays a photograph behind the brand red at low opacity;
+ * with no licensed photography here, the same depth comes from two soft
+ * highlights over the container red, so the band still reads as a surface
+ * rather than a flat block.
+ */
+@utility hero-band {
+  background-color: var(--color-primary-container);
+  background-image:
+    radial-gradient(
+      ellipse 80% 60% at 15% 0%,
+      rgb(255 255 255 / 0.16),
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse 60% 80% at 100% 100%,
+      rgb(0 0 0 / 0.22),
+      transparent 55%
+    );
+}
+
+/* Level-1 card from the home design: near-white over the tonal floor. */
+@utility glass-card {
+  background: rgb(255 255 255 / 0.9);
+  border: 1px solid var(--color-border-subtle);
+  box-shadow:
+    0 4px 6px -1px rgb(0 0 0 / 0.05),
+    0 2px 4px -1px rgb(0 0 0 / 0.03);
+  backdrop-filter: blur(10px);
 }
 
 /* Status tags are pills, which keeps them visually distinct from buttons. */

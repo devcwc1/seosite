@@ -54,7 +54,7 @@ export default function RootLayout({
               <ul className="flex items-center gap-sm sm:gap-md">
                 <li>
                   <Link
-                    href="/"
+                    href="/products"
                     className="text-body-md text-on-surface-variant transition-colors hover:text-primary"
                   >
                     Catalog

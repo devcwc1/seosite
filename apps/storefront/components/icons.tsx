@@ -61,6 +61,34 @@ export function ClockIcon({ className }: IconProps) {
   );
 }
 
+export function DocumentIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <path d="M14 3v5h5M9 13h6M9 17h4" />
+    </svg>
+  );
+}
+
+export function PlugIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M10 4v5M14 4v5" />
+      <path d="M7 9h10v3a5 5 0 0 1-10 0z" />
+      <path d="M12 17v3" />
+    </svg>
+  );
+}
+
+export function ShieldIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M12 3 5 6v5.5c0 4 2.9 7.6 7 8.5 4.1-.9 7-4.5 7-8.5V6z" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
+  );
+}
+
 export function ImagePlaceholderIcon({ className }: IconProps) {
   return (
     <svg {...base} className={className}>
