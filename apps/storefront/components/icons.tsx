@@ -61,6 +61,23 @@ export function ClockIcon({ className }: IconProps) {
   );
 }
 
+export function SearchIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m16.5 16.5 4 4" />
+    </svg>
+  );
+}
+
+export function ArrowUpIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M12 19V6M6 12l6-6 6 6" />
+    </svg>
+  );
+}
+
 export function DocumentIcon({ className }: IconProps) {
   return (
     <svg {...base} className={className}>

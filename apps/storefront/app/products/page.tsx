@@ -1,10 +1,17 @@
+import Link from "next/link";
 import type { StorefrontProduct } from "@orbit/next";
 
 import { ProductCard } from "@/components/product-card";
-import { orbit } from "@/lib/orbit";
+import { orbit, matchesQuery } from "@/lib/orbit";
 
 export const metadata = {
   title: "Catalog",
+};
+
+type CatalogPageProps = {
+  // Category browsing lives at /categories/[slug] — its own indexable page —
+  // so this route only ever filters by free text.
+  searchParams: Promise<{ q?: string }>;
 };
 
 /** Page-header band: tonal surface, wide margins, no invented claims. */
@@ -22,7 +29,20 @@ function CatalogHeader({ subtitle }: { subtitle: string }) {
   );
 }
 
-export default async function CatalogPage() {
+function Notice({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="shell py-xl">
+      <p className="rounded-lg border border-outline-variant bg-surface-container-lowest p-lg text-body-md text-on-surface-variant shadow-card">
+        {children}
+      </p>
+    </div>
+  );
+}
+
+export default async function CatalogPage({ searchParams }: CatalogPageProps) {
+  const { q } = await searchParams;
+  const query = q?.trim() ?? "";
+
   let products: StorefrontProduct[];
 
   try {
@@ -33,12 +53,10 @@ export default async function CatalogPage() {
     return (
       <>
         <CatalogHeader subtitle="The catalog is temporarily unavailable." />
-        <div className="shell py-xl">
-          <p className="rounded-lg border border-outline-variant bg-surface-container-lowest p-lg text-body-md text-on-surface-variant shadow-card">
-            We could not reach the catalog just now. It comes back on its own —
-            please try again in a moment.
-          </p>
-        </div>
+        <Notice>
+          We could not reach the catalog just now. It comes back on its own —
+          please try again in a moment.
+        </Notice>
       </>
     );
   }
@@ -47,30 +65,59 @@ export default async function CatalogPage() {
     return (
       <>
         <CatalogHeader subtitle="No products are published yet." />
-        <div className="shell py-xl">
-          <p className="rounded-lg border border-outline-variant bg-surface-container-lowest p-lg text-body-md text-on-surface-variant shadow-card">
-            Once a product is published in Orbit, it appears here.
-          </p>
-        </div>
+        <Notice>Once a product is published in Orbit, it appears here.</Notice>
       </>
     );
   }
 
+  // Filtering happens here rather than in the API: the catalog is small, and
+  // `@orbit/next` deliberately exposes no query contract to consumers.
+  const matches = products.filter((product) => matchesQuery(product, query));
+
+  const filtered = query !== "";
+  const subtitle = filtered
+    ? `${matches.length} of ${products.length} ${
+        products.length === 1 ? "product" : "products"
+      } match.`
+    : `${products.length} ${
+        products.length === 1 ? "product" : "products"
+      } available to order.`;
+
   return (
     <>
-      <CatalogHeader
-        subtitle={`${products.length} ${
-          products.length === 1 ? "product" : "products"
-        } available to order.`}
-      />
+      <CatalogHeader subtitle={subtitle} />
 
       <section className="bg-surface-container-low py-xl">
         <div className="shell">
-          <ul className="grid grid-cols-1 gap-md sm:grid-cols-2 lg:grid-cols-4">
-            {products.map((product) => (
-              <ProductCard key={product.id} product={product} />
-            ))}
-          </ul>
+          {filtered ? (
+            <div className="mb-md flex flex-wrap items-center gap-sm">
+              <span className="pill bg-surface-container text-on-surface-variant">
+                “{query}”
+              </span>
+              <Link
+                href="/products"
+                className="text-body-sm text-primary underline-offset-2 hover:underline"
+              >
+                Clear filters
+              </Link>
+            </div>
+          ) : null}
+
+          {matches.length === 0 ? (
+            <p className="rounded-lg border border-outline-variant bg-surface-container-lowest p-lg text-body-md text-on-surface-variant shadow-card">
+              Nothing matches that. Try a different word, or{" "}
+              <Link href="/products" className="text-primary hover:underline">
+                browse everything
+              </Link>
+              .
+            </p>
+          ) : (
+            <ul className="grid grid-cols-1 gap-md sm:grid-cols-2 lg:grid-cols-4">
+              {matches.map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </ul>
+          )}
         </div>
       </section>
     </>

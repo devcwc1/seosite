@@ -168,7 +168,15 @@
  */
 @utility hero-band {
   background-color: var(--color-primary-container);
+  /*
+   * `--hero-photo` is the hook for the design's photograph: drop a file in
+   * `public/` and set it on the section, e.g.
+   *   style={{ "--hero-photo": "url(/hero.jpg)" }}
+   * and it composites over the brand red under the same overlay. Until then
+   * the two highlights below carry the depth on their own.
+   */
   background-image:
+    var(--hero-photo, none),
     radial-gradient(
       ellipse 80% 60% at 15% 0%,
       rgb(255 255 255 / 0.16),
@@ -179,6 +187,9 @@
       rgb(0 0 0 / 0.22),
       transparent 55%
     );
+  background-size: cover;
+  background-position: center;
+  background-blend-mode: overlay, normal, normal;
 }
 
 /* Level-1 card from the home design: near-white over the tonal floor. */
