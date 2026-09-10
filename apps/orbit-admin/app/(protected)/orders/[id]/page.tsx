@@ -17,8 +17,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { OrderStatusActions } from "@/components/orders/order-status-actions";
 import { formatPrice } from "@/lib/format";
-import { getOrder } from "@/lib/orders/mutations";
+import { getOrder, NEXT_STATUSES } from "@/lib/orders/mutations";
 import type { OrderStatus } from "@/lib/db/schema";
 
 const STATUS_VARIANT: Record<
@@ -151,12 +152,18 @@ export default async function OrderDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle>Payment</CardTitle>
+          <CardTitle>Payment &amp; fulfilment</CardTitle>
+          <CardDescription>
+            Method recorded as <code>{order.paymentMethod}</code>. No payment
+            provider is integrated, so nothing has been charged automatically —
+            confirm the money yourself before marking this order paid.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          Method recorded as <code>{order.paymentMethod}</code>. No payment
-          provider is integrated, so nothing has been charged — the order sits
-          at <strong>pending</strong> until someone acts on it.
+        <CardContent className="flex flex-col gap-4">
+          <OrderStatusActions
+            orderId={order.id}
+            next={NEXT_STATUSES[order.status]}
+          />
         </CardContent>
       </Card>
     </div>

@@ -13,25 +13,18 @@ import {
   products,
   type Order,
   type OrderItem,
+  type OrderStatus,
 } from "@/lib/db/schema";
+import { getOrderMoneySettings } from "@/lib/settings/store";
 
 import type { OrderInput } from "./validation";
 
 /**
  * Shipping cost and tax rate are configuration, not code: neither has a
- * defensible default, and VAT in particular is a legal figure. They stay at
- * zero until someone sets them deliberately, and whatever was applied is
- * stored on the order itself.
+ * defensible default, and VAT in particular is a legal figure. They come from
+ * the settings table (editable in the admin), and whatever was applied is
+ * stored on the order itself so history stays true.
  */
-function shippingCents(): number {
-  const raw = Number(process.env.ORDER_SHIPPING_CENTS ?? "0");
-  return Number.isFinite(raw) && raw >= 0 ? Math.trunc(raw) : 0;
-}
-
-function taxRateBp(): number {
-  const raw = Number(process.env.ORDER_TAX_RATE_BP ?? "0");
-  return Number.isFinite(raw) && raw >= 0 ? Math.trunc(raw) : 0;
-}
 
 export type CreateOrderResult =
   | {
@@ -141,8 +134,8 @@ export async function createOrder(
   });
 
   const subtotal = lines.reduce((sum, line) => sum + line.lineTotalCents, 0);
-  const shipping = shippingCents();
-  const rateBp = taxRateBp();
+  const { shippingCents: shipping, taxRateBp: rateBp } =
+    await getOrderMoneySettings();
   const tax = Math.round(((subtotal + shipping) * rateBp) / 10_000);
   const total = subtotal + shipping + tax;
 
@@ -209,6 +202,58 @@ export async function createOrder(
   }
 
   return { ok: false, error: "Could not allocate an order number." };
+}
+
+/**
+ * Where an order may go from where it is.
+ *
+ * `paid` is reachable only by hand today: no payment provider reports back, so
+ * someone confirms the money arrived. `shipped` and `cancelled` are terminal —
+ * unwinding either one is a business decision (refund, restock) rather than a
+ * status flip, so the UI does not pretend otherwise.
+ */
+export const NEXT_STATUSES: Record<OrderStatus, OrderStatus[]> = {
+  pending: ["paid", "cancelled"],
+  paid: ["shipped", "cancelled"],
+  shipped: [],
+  cancelled: [],
+};
+
+export type StatusChangeResult = { ok: boolean; error?: string };
+
+export async function setOrderStatus(
+  id: string,
+  next: OrderStatus,
+  actorId: string | null,
+): Promise<StatusChangeResult> {
+  const [order] = await db
+    .select({ id: orders.id, status: orders.status, number: orders.orderNumber })
+    .from(orders)
+    .where(eq(orders.id, id))
+    .limit(1);
+  if (!order) return { ok: false, error: "Order not found." };
+
+  if (!NEXT_STATUSES[order.status].includes(next)) {
+    return {
+      ok: false,
+      error: `An order that is ${order.status} cannot become ${next}.`,
+    };
+  }
+
+  await db.update(orders).set({ status: next }).where(eq(orders.id, id));
+
+  await recordAudit({
+    actorId,
+    action: "order.status_changed",
+    target: `order:${id}`,
+    metadata: {
+      orderNumber: order.number,
+      from: order.status,
+      to: next,
+    },
+  });
+
+  return { ok: true };
 }
 
 export type OrderWithItems = Order & { items: OrderItem[] };

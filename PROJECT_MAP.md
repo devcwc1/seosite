@@ -52,7 +52,8 @@
 description, images, categories, meta, reviews — versioned) ·
 `product_content_revisions` · `audit_logs` · `settings` · `media` ·
 `media_assets` (ORB-501: sha256-deduped, content-addressed) · `product_media`
-(product↔asset gallery)
+(product↔asset gallery) · `orders` · `order_items` (snapshot of what was
+bought; money stored as charged)
 
 ---
 
@@ -177,6 +178,21 @@ description, images, categories, meta, reviews — versioned) ·
 | `apps/orbit-admin/components/media/media-picker.tsx` | Reusable picker dialog (used by the product form) |
 | `apps/orbit-admin/media/` | Media volume root — `MEDIA_DIR`, `/srv/orbit-media` in Docker (gitignored) |
 
+## orbit-admin — Orders (storefront checkout)
+| File | Purpose |
+|------|---------|
+| `apps/orbit-admin/lib/orders/validation.ts` | Zod payload — slugs and quantities only, never prices |
+| `apps/orbit-admin/lib/orders/mutations.ts` | `createOrder` (prices from the catalog), `setOrderStatus`, `NEXT_STATUSES`, list/get |
+| `apps/orbit-admin/app/api/v1/orders/route.ts` | `POST` order intake — `ORBIT_WRITE_TOKEN` required, fails closed |
+| `apps/orbit-admin/app/(protected)/orders/page.tsx` | Order list |
+| `apps/orbit-admin/app/(protected)/orders/[id]/page.tsx` | Order detail — customer, items, totals, status |
+| `apps/orbit-admin/app/(protected)/orders/actions.ts` | Status transitions (writers only) |
+| `apps/orbit-admin/components/orders/order-status-actions.tsx` | Status buttons + refusal message |
+| `apps/orbit-admin/lib/orders/status.test.ts` | Transition rules (no skipping payment; terminal states) |
+| `apps/orbit-admin/lib/settings/store.ts` | Typed `settings` access; order money with env fallback |
+| `apps/orbit-admin/app/(protected)/settings/page.tsx` | Shipping + VAT, admin-only |
+| `apps/orbit-admin/components/settings/order-settings-form.tsx` | Euros/percent in, cents/basis points stored |
+
 ## orbit-admin — API routes & error handling
 | File | Purpose |
 |------|---------|
@@ -269,9 +285,19 @@ Postgres: 39 tests green, `tsc --noEmit` clean, `next build` clean.
   path on the storefront's own origin (**ORB-103**). Verified end to end in dev.
 - Storefront has **no** Pino logger and **no** `/api/health` (T4 incomplete on
   storefront side).
-- Storefront has no cart or checkout: `@orbit/next` is read-only, so the PDP's
-  "Add to cart" is deliberately disabled and says so. Needs an order contract
-  on the admin side first.
+- Cart and checkout work end to end: cookie cart → `/checkout` → `/checkout/payment`
+  → order recorded in Orbit → confirmation. Server actions over plain forms, so
+  the flow runs with JavaScript off. **No payment provider** is connected —
+  orders land as `pending` and someone marks them paid by hand. iDEAL,
+  Bancontact and cards each need a PSP integration (Mollie/Adyen), and card
+  fields on our own form would raise PCI scope.
+- Shipping cost and VAT are editable in **Settings** (admin-only), stored in
+  `settings` as cents and basis points, with `ORDER_SHIPPING_CENTS` /
+  `ORDER_TAX_RATE_BP` as the fallback for a fresh database. Both are **still
+  zero** — the mockups disagreed (9% on the cart, 21% at payment) and VAT wants
+  a decision, not a default.
+- Stock is checked at order time but never decremented: reserving inventory
+  (abandonment, cancellation, partial shipment) is its own design.
 - Storefront design tokens come from the Stitch project "Apotheek 24/7 Website
   Redesign" (theme *Clinical Vitality*). Note that Tailwind v4 resolves
   `max-w-<name>` against the spacing scale first, so `max-w-sm|md|lg|xl` now
