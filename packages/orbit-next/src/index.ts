@@ -54,15 +54,50 @@ export type OrbitClientOptions = {
    * (e.g. a reverse proxy mapping the media path) to keep the paths relative.
    */
   assetBaseUrl?: string;
+  /**
+   * Shared secret for writes (`createOrder`). Falls back to
+   * `ORBIT_WRITE_TOKEN`. Server-side only — never expose it to a browser.
+   */
+  writeToken?: string;
   /** Injectable fetch, mainly for testing. Defaults to the global `fetch`. */
   fetch?: typeof fetch;
   /** Next.js ISR revalidation window in seconds. Defaults to 60. */
   revalidate?: number;
 };
 
+/** What a storefront sends to place an order. Deliberately no prices. */
+export type OrderInput = {
+  email: string;
+  phone?: string;
+  shipping: {
+    name: string;
+    street: string;
+    postcode: string;
+    city: string;
+    /** ISO 3166-1 alpha-2. */
+    country: string;
+  };
+  items: { slug: string; quantity: number }[];
+};
+
+/** What Orbit returns once an order is recorded. Every amount is Orbit's. */
+export type OrderConfirmation = {
+  orderNumber: string;
+  currency: string;
+  subtotalCents: number;
+  shippingCents: number;
+  taxCents: number;
+  totalCents: number;
+};
+
 export interface OrbitClient {
   listProducts(): Promise<StorefrontProduct[]>;
   getProduct(slug: string): Promise<StorefrontProduct | null>;
+  /**
+   * Place an order. Server-side only: it presents the write token, which must
+   * never reach a browser.
+   */
+  createOrder(input: OrderInput): Promise<OrderConfirmation>;
 }
 
 /** Thrown when the Orbit content API responds with a non-OK status. */
@@ -73,6 +108,20 @@ export class OrbitApiError extends Error {
   ) {
     super(`Orbit API responded ${status} for ${path}`);
     this.name = "OrbitApiError";
+  }
+}
+
+/**
+ * Thrown when Orbit refuses an order. `detail` is Orbit's own explanation
+ * (a stale cart, an out-of-stock line) and is safe to show a customer.
+ */
+export class OrbitOrderError extends Error {
+  constructor(
+    readonly status: number,
+    readonly detail: string,
+  ) {
+    super(detail);
+    this.name = "OrbitOrderError";
   }
 }
 
@@ -155,6 +204,41 @@ export function createOrbitClient(
         }
         throw error;
       }
+    },
+
+    async createOrder(input: OrderInput) {
+      const token = options.writeToken ?? process.env.ORBIT_WRITE_TOKEN;
+      if (!token) {
+        throw new OrbitOrderError(
+          503,
+          "Ordering is not configured for this storefront.",
+        );
+      }
+
+      const response = await doFetch(`${baseUrl}/api/v1/orders`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(input),
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        // Orbit answers with problem+json; `detail` is written for a customer.
+        const problem = (await response
+          .json()
+          .catch(() => null)) as { detail?: string } | null;
+
+        throw new OrbitOrderError(
+          response.status,
+          problem?.detail ?? "The order could not be placed.",
+        );
+      }
+
+      return (await response.json()) as OrderConfirmation;
     },
   };
 }

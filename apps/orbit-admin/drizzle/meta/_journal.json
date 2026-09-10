@@ -36,6 +36,13 @@
       "when": 1788430900149,
       "tag": "0004_lively_rogue",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788959644822,
+      "tag": "0005_smiling_blue_marvel",
+      "breakpoints": true
     }
   ]
 }

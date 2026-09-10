@@ -424,6 +424,97 @@ export const productMedia = pgTable(
 );
 
 /* -------------------------------------------------------------------------- */
+/*  orders + order_items (storefront checkout)                                 */
+/* -------------------------------------------------------------------------- */
+
+export const orderStatus = pgEnum("order_status", [
+  "pending",
+  "paid",
+  "shipped",
+  "cancelled",
+]);
+
+export const orders = pgTable(
+  "orders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Human-readable reference shown to the customer, e.g. ORB-2026-4KJ21P. */
+    orderNumber: varchar("order_number", { length: 32 }).notNull(),
+    /**
+     * `pending` means recorded but unpaid: no payment provider is wired up, so
+     * nothing can legitimately reach `paid` on its own yet.
+     */
+    status: orderStatus("status").notNull().default("pending"),
+
+    email: varchar("email", { length: 255 }).notNull(),
+    phone: varchar("phone", { length: 64 }),
+
+    shippingName: varchar("shipping_name", { length: 255 }).notNull(),
+    shippingStreet: varchar("shipping_street", { length: 255 }).notNull(),
+    shippingPostcode: varchar("shipping_postcode", { length: 32 }).notNull(),
+    shippingCity: varchar("shipping_city", { length: 128 }).notNull(),
+    shippingCountry: varchar("shipping_country", { length: 2 }).notNull(),
+
+    currency: varchar("currency", { length: 3 }).notNull().default("EUR"),
+    /**
+     * Money as charged, in the smallest unit. Stored rather than recomputed so
+     * an order stays exactly what the customer agreed to, whatever later
+     * happens to catalog prices, tax rates or shipping costs.
+     */
+    subtotalCents: integer("subtotal_cents").notNull(),
+    shippingCents: integer("shipping_cents").notNull().default(0),
+    taxCents: integer("tax_cents").notNull().default(0),
+    totalCents: integer("total_cents").notNull(),
+    /** Tax rate applied, in basis points (900 = 9%). */
+    taxRateBp: integer("tax_rate_bp").notNull().default(0),
+
+    /** Placeholder until a payment provider is integrated. */
+    paymentMethod: varchar("payment_method", { length: 32 })
+      .notNull()
+      .default("none"),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("orders_order_number_unique").on(table.orderNumber),
+    index("orders_created_at_idx").on(table.createdAt),
+    index("orders_status_idx").on(table.status),
+  ],
+);
+
+export const orderItems = pgTable(
+  "order_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    /**
+     * Kept for reporting, but nullable and never trusted for display: a product
+     * can be deleted long after the order it appears in.
+     */
+    productId: uuid("product_id").references(() => products.id, {
+      onDelete: "set null",
+    }),
+
+    /** Snapshot of what was bought, so the line survives catalog edits. */
+    title: varchar("title", { length: 512 }).notNull(),
+    sku: varchar("sku", { length: 64 }).notNull(),
+    slug: varchar("slug", { length: 255 }).notNull(),
+    unitPriceCents: integer("unit_price_cents").notNull(),
+    quantity: integer("quantity").notNull(),
+    lineTotalCents: integer("line_total_cents").notNull(),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("order_items_order_idx").on(table.orderId)],
+);
+
+/* -------------------------------------------------------------------------- */
 /*  Relations                                                                  */
 /* -------------------------------------------------------------------------- */
 
@@ -540,3 +631,8 @@ export type MediaAsset = typeof mediaAssets.$inferSelect;
 export type NewMediaAsset = typeof mediaAssets.$inferInsert;
 export type ProductMedia = typeof productMedia.$inferSelect;
 export type NewProductMedia = typeof productMedia.$inferInsert;
+export type Order = typeof orders.$inferSelect;
+export type NewOrder = typeof orders.$inferInsert;
+export type OrderItem = typeof orderItems.$inferSelect;
+export type NewOrderItem = typeof orderItems.$inferInsert;
+export type OrderStatus = (typeof orderStatus.enumValues)[number];

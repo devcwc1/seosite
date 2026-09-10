@@ -4,6 +4,7 @@ import {
   Images,
   LayoutDashboard,
   LogOut,
+  Receipt,
   Settings,
   Users,
 } from "lucide-react";
@@ -15,6 +16,7 @@ import type { User } from "@/lib/db/schema";
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/products", label: "Products", icon: Boxes },
+  { href: "/orders", label: "Orders", icon: Receipt },
   { href: "/media", label: "Media", icon: Images },
   { href: "/users", label: "Users", icon: Users },
   { href: "/settings", label: "Settings", icon: Settings },

@@ -110,3 +110,83 @@ describe("image URL resolution", () => {
     await expect(orbit.getProduct("missing")).resolves.toBeNull();
   });
 });
+
+describe("createOrder", () => {
+  const input = {
+    email: "buyer@example.com",
+    shipping: {
+      name: "A Buyer",
+      street: "Street 1",
+      postcode: "1234 AB",
+      city: "Amsterdam",
+      country: "NL",
+    },
+    items: [{ slug: "sleep-aid", quantity: 2 }],
+  };
+
+  it("posts to the orders endpoint with the write token", async () => {
+    let seen: { url: string; init?: RequestInit } | null = null;
+
+    const orbit = createOrbitClient({
+      baseUrl: BASE_URL,
+      writeToken: "s3cret",
+      fetch: (async (url: string | URL | Request, init?: RequestInit) => {
+        seen = { url: String(url), init };
+        return new Response(
+          JSON.stringify({
+            orderNumber: "ORB-2026-ABC123",
+            currency: "EUR",
+            subtotalCents: 3998,
+            shippingCents: 0,
+            taxCents: 0,
+            totalCents: 3998,
+          }),
+          { status: 201, headers: { "content-type": "application/json" } },
+        );
+      }) as typeof fetch,
+    });
+
+    const confirmation = await orbit.createOrder(input);
+
+    expect(confirmation.orderNumber).toBe("ORB-2026-ABC123");
+    expect(seen!.url).toBe(`${BASE_URL}/api/v1/orders`);
+    expect(seen!.init?.method).toBe("POST");
+    expect(
+      (seen!.init?.headers as Record<string, string>).authorization,
+    ).toBe("Bearer s3cret");
+    // The client never sends money: Orbit computes every amount.
+    expect(seen!.init?.body).not.toContain("Cents");
+  });
+
+  it("surfaces Orbit's own explanation when an order is refused", async () => {
+    const orbit = createOrbitClient({
+      baseUrl: BASE_URL,
+      writeToken: "s3cret",
+      fetch: (async () =>
+        new Response(
+          JSON.stringify({ detail: "These products are out of stock: tee" }),
+          { status: 409, headers: { "content-type": "application/json" } },
+        )) as typeof fetch,
+    });
+
+    await expect(orbit.createOrder(input)).rejects.toMatchObject({
+      name: "OrbitOrderError",
+      status: 409,
+      detail: "These products are out of stock: tee",
+    });
+  });
+
+  it("refuses to send an order with no token configured", async () => {
+    const orbit = createOrbitClient({
+      baseUrl: BASE_URL,
+      writeToken: "",
+      fetch: (async () => {
+        throw new Error("should not be called");
+      }) as typeof fetch,
+    });
+
+    await expect(orbit.createOrder(input)).rejects.toMatchObject({
+      status: 503,
+    });
+  });
+});

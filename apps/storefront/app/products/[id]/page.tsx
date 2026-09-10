@@ -5,10 +5,13 @@ import type { StorefrontProduct } from "@orbit/next";
 
 import {
   ArrowRightIcon,
+  CartIcon,
   ImagePlaceholderIcon,
   PlugIcon,
   ShieldIcon,
 } from "@/components/icons";
+import { addToCartAction } from "@/lib/cart-actions";
+import { MAX_QUANTITY } from "@/lib/cart";
 import {
   formatPrice,
   galleryImages,
@@ -243,23 +246,40 @@ export default async function ProductPage({
             </p>
           ) : null}
 
-          {/* The design pairs a quantity stepper with this button. Both would
-              be dead controls until an order contract exists, so the page
-              ships one honest control instead of two inert ones. */}
-          <button
-            type="button"
-            disabled
-            className="mb-md flex w-full items-center justify-center gap-xs rounded-DEFAULT bg-primary-container px-lg py-sm text-label-md text-on-primary shadow-card transition-colors disabled:cursor-not-allowed disabled:bg-surface-container-highest disabled:text-on-surface-variant disabled:shadow-none"
+          {/* The design's quantity stepper, as a number input: the +/- buttons
+              would need JavaScript, and this works without any. */}
+          <form
+            action={addToCartAction}
+            className="mb-md flex items-stretch gap-sm"
           >
-            Add to cart
-          </button>
+            <input type="hidden" name="slug" value={product.slug} />
+            <label htmlFor="quantity" className="sr-only">
+              Quantity
+            </label>
+            <input
+              id="quantity"
+              type="number"
+              name="quantity"
+              min={1}
+              max={MAX_QUANTITY}
+              defaultValue={1}
+              className="w-20 rounded-DEFAULT border border-border-subtle bg-surface-container-lowest px-sm py-xs text-center text-body-md"
+            />
+            <button
+              type="submit"
+              className="flex flex-1 items-center justify-center gap-xs rounded-DEFAULT bg-primary-container px-lg py-sm text-label-md text-on-primary shadow-card transition-colors hover:bg-primary"
+            >
+              <CartIcon className="size-5" />
+              Add to cart
+            </button>
+          </form>
 
           <div className="rounded-lg border border-border-subtle bg-surface-muted p-md">
             <ul className="flex flex-col gap-sm">
               <li className="flex items-start gap-sm text-body-md text-on-surface-variant">
                 <PlugIcon className="mt-base size-5 shrink-0 text-primary" />
-                Ordering isn&apos;t available yet — the catalog is read-only
-                until the admin owns a cart and order contract.
+                The cart is real and survives a reload, but there is no
+                checkout behind it yet — Orbit does not own orders.
               </li>
               <li className="flex items-start gap-sm text-body-md text-on-surface-variant">
                 <ShieldIcon className="mt-base size-5 shrink-0 text-primary" />

@@ -8,6 +8,7 @@ import {
   PharmacyMark,
   SearchIcon,
 } from "@/components/icons";
+import { countItems, readCart } from "@/lib/cart";
 import { allCategories, orbit } from "@/lib/orbit";
 
 import "./globals.css";
@@ -62,6 +63,8 @@ export default async function RootLayout({
     categories = [];
   }
 
+  const cartCount = countItems(await readCart());
+
   return (
     <html lang="en" className={inter.variable}>
       <body
@@ -90,14 +93,16 @@ export default async function RootLayout({
                 </Link>
                 <Link
                   href="/cart"
-                  aria-label="Cart, empty"
+                  aria-label={
+                    cartCount === 0
+                      ? "Cart, empty"
+                      : `Cart, ${cartCount} ${cartCount === 1 ? "item" : "items"}`
+                  }
                   className="relative rounded-full p-xs text-on-surface-variant transition-colors hover:bg-surface-container-low hover:text-primary"
                 >
                   <CartIcon className="size-6" />
-                  {/* The cart is always empty until an order contract exists,
-                      so the count is honest rather than decorative. */}
                   <span className="absolute top-0 right-0 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-on-primary">
-                    0
+                    {cartCount}
                   </span>
                 </Link>
               </nav>
