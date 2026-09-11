@@ -35,30 +35,43 @@ async function loadCatalog() {
   }
 }
 
+/** Categories are editor-owned pages now, not names scraped off products. */
+async function loadCategory(slug: string) {
+  try {
+    return await orbit.getCategory(slug);
+  } catch {
+    return null;
+  }
+}
+
 /** Each category is a real page, so it gets prerendered and indexed. */
 export async function generateStaticParams(): Promise<{ slug: string }[]> {
-  const products = await loadCatalog();
-  if (!products) return [];
-
-  return allCategories(products).map((category) => ({ slug: category.slug }));
+  try {
+    const categories = await orbit.listCategories();
+    return categories.map((category) => ({ slug: category.slug }));
+  } catch {
+    return [];
+  }
 }
 
 export async function generateMetadata({
   params,
 }: CategoryPageProps): Promise<Metadata> {
   const { slug } = await params;
-  const products = await loadCatalog();
-  const category = products
-    ? allCategories(products).find((item) => item.slug === slug)
-    : undefined;
+  const category = await loadCategory(slug);
 
   if (!category) return { title: "Category not found" };
 
+  // An editor's meta wins; otherwise it is derived from what the page holds.
   return {
-    title: category.name,
-    description: `${category.count} ${
-      category.count === 1 ? "product" : "products"
-    } in ${category.name}, published from the Orbit catalog.`,
+    title: category.meta.title || category.name,
+    description:
+      category.meta.description ||
+      category.description ||
+      `${category.productCount} ${
+        category.productCount === 1 ? "product" : "products"
+      } in ${category.name}.`,
+    keywords: category.meta.keywords || undefined,
   };
 }
 
@@ -81,8 +94,10 @@ export default async function CategoryPage({
     );
   }
 
+  // The sidebar still counts what is actually on the shelf, but the page
+  // itself belongs to the category record an editor maintains.
   const categories = allCategories(products);
-  const category = categories.find((item) => item.slug === slug);
+  const category = await loadCategory(slug);
   if (!category) notFound();
 
   const activeSort: SortKey = isSortKey(sort) ? sort : DEFAULT_SORT;
@@ -159,9 +174,17 @@ export default async function CategoryPage({
         <h1 className="text-headline-lg text-on-surface md:text-display-lg">
           {category.name}
         </h1>
-        <p className="mt-sm max-w-3xl text-body-lg text-on-surface-variant">
-          {category.count} {category.count === 1 ? "product" : "products"}{" "}
-          published in this category, straight from the Orbit catalog.
+        {/* The editor's intro copy is the page's own words; the count is a
+            fact about the shelf and stays underneath it. */}
+        {category.description ? (
+          <p className="mt-sm max-w-3xl text-body-lg whitespace-pre-line text-on-surface-variant">
+            {category.description}
+          </p>
+        ) : null}
+        <p className="mt-xs text-body-sm text-on-surface-variant">
+          {category.productCount}{" "}
+          {category.productCount === 1 ? "product" : "products"} in this
+          category.
         </p>
       </div>
 

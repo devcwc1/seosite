@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 
@@ -48,6 +49,14 @@ type ReviewDraft = {
   createdAt: string;
 };
 
+/** A category this product is filed under. */
+type CategorySelection = {
+  categoryId: string;
+  isPrimary: boolean;
+};
+
+export type AvailableCategory = { id: string; name: string; slug: string };
+
 type ImageDraft = {
   id: string;
   assetId: string;
@@ -68,6 +77,7 @@ export type ProductFormInitial = {
   inStock: boolean;
   stockQuantity: number;
   images: { assetId: string; url: string; alt?: string }[];
+  categories: CategorySelection[];
   meta: { title?: string; description?: string; keywords?: string };
   reviews: ReviewDraft[];
 };
@@ -91,9 +101,12 @@ function newReview(): ReviewDraft {
 export function ProductForm({
   mode,
   initial,
+  availableCategories = [],
 }: {
   mode: "create" | "edit";
   initial?: ProductFormInitial;
+  /** Every category that exists, for the picker. */
+  availableCategories?: AvailableCategory[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -129,6 +142,32 @@ export function ProductForm({
   const [reviews, setReviews] = useState<ReviewDraft[]>(
     initial?.reviews.map((r) => ({ ...r })) ?? [],
   );
+
+  const [categories, setCategories] = useState<CategorySelection[]>(
+    initial?.categories.map((c) => ({ ...c })) ?? [],
+  );
+
+  /** Filing under a category, or unfiling it. */
+  function toggleCategory(categoryId: string) {
+    setCategories((prev) => {
+      const without = prev.filter((c) => c.categoryId !== categoryId);
+      if (without.length !== prev.length) {
+        // Removing the primary hands it to whatever is left.
+        if (without.length > 0 && !without.some((c) => c.isPrimary)) {
+          without[0] = { ...without[0]!, isPrimary: true };
+        }
+        return without;
+      }
+      return [...prev, { categoryId, isPrimary: prev.length === 0 }];
+    });
+  }
+
+  /** Exactly one selection is primary at a time. */
+  function setPrimaryCategory(categoryId: string) {
+    setCategories((prev) =>
+      prev.map((c) => ({ ...c, isPrimary: c.categoryId === categoryId })),
+    );
+  }
 
   function set<K extends keyof typeof values>(
     key: K,
@@ -175,6 +214,9 @@ export function ProductForm({
   const imagesError = Object.entries(errors).find(([k]) =>
     k.startsWith("images"),
   )?.[1];
+  const categoriesError = Object.entries(errors).find(([k]) =>
+    k.startsWith("categories"),
+  )?.[1];
 
   function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -194,6 +236,7 @@ export function ProductForm({
         assetId: image.assetId,
         alt: image.alt,
       })),
+      categories,
       meta: {
         title: values.metaTitle,
         description: values.metaDescription,
@@ -309,6 +352,80 @@ export function ProductForm({
               </SelectContent>
             </Select>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* ---------------------------------------------------- Categories */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Categories</CardTitle>
+          <CardDescription>
+            Each category is its own archive page with its own copy and SEO.
+            The primary one is the label on the product card and in the
+            breadcrumb.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3">
+          <FieldError message={categoriesError} />
+
+          {availableCategories.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No categories exist yet.{" "}
+              <Link href="/categories/new" className="underline">
+                Create one
+              </Link>{" "}
+              and it will be selectable here.
+            </p>
+          ) : (
+            <ul className="grid gap-2">
+              {availableCategories.map((category) => {
+                const selected = categories.find(
+                  (c) => c.categoryId === category.id,
+                );
+
+                return (
+                  <li
+                    key={category.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
+                  >
+                    <label className="flex items-center gap-3 text-sm">
+                      <Checkbox
+                        checked={selected !== undefined}
+                        onCheckedChange={() => toggleCategory(category.id)}
+                      />
+                      <span>
+                        <span className="font-medium">{category.name}</span>
+                        <span className="ml-2 text-muted-foreground">
+                          /categories/{category.slug}
+                        </span>
+                      </span>
+                    </label>
+
+                    {/* Primary only means something for a category the product
+                        is actually filed under. */}
+                    <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <input
+                        type="radio"
+                        name="primaryCategory"
+                        className="size-4 accent-primary"
+                        disabled={selected === undefined}
+                        checked={selected?.isPrimary ?? false}
+                        onChange={() => setPrimaryCategory(category.id)}
+                      />
+                      Primary
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {categories.length === 0 && availableCategories.length > 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Filed under nothing yet. The product still publishes, but it will
+              not appear on any archive page.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
 

@@ -62,6 +62,7 @@ function formInput(
     inStock: true,
     stockQuantity: "5",
     images,
+    categories: [],
     meta: { title: "", description: "", keywords: "" },
     reviews: [],
   });

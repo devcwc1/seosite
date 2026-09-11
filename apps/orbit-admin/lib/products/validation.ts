@@ -12,6 +12,8 @@ export type ProductReviewPayload = {
 
 export type ProductImagePayload = { assetId: string; alt: string };
 
+export type ProductCategoryPayload = { categoryId: string; isPrimary: boolean };
+
 export type ProductFormPayload = {
   title: string;
   slug: string;
@@ -24,6 +26,7 @@ export type ProductFormPayload = {
   inStock: boolean;
   stockQuantity: string;
   images: ProductImagePayload[];
+  categories: ProductCategoryPayload[];
   meta: { title: string; description: string; keywords: string };
   reviews: ProductReviewPayload[];
 };
@@ -32,6 +35,13 @@ const imageSchema = z.object({
   // References a hardened media_assets row (ORB-501) rather than a raw URL.
   assetId: z.string().uuid("Invalid image reference"),
   alt: z.string().trim().max(300),
+});
+
+const categorySchema = z.object({
+  // References a `categories` row: archive pages own their own content, so a
+  // product points at one rather than naming it.
+  categoryId: z.string().uuid("Invalid category reference"),
+  isPrimary: z.boolean(),
 });
 
 const reviewSchema = z.object({
@@ -70,6 +80,7 @@ export const productInputSchema = z.object({
     .int("Stock must be a whole number")
     .min(0, "Stock cannot be negative"),
   images: z.array(imageSchema),
+  categories: z.array(categorySchema).max(10, "At most 10 categories"),
   meta: z.object({
     title: z.string().trim().max(255),
     description: z.string().trim().max(1000),

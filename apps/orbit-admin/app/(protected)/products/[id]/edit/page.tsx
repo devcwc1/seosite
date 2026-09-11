@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { ProductForm } from "@/components/products/product-form";
+import { listCategories } from "@/lib/categories/mutations";
 import { getProductForEdit } from "@/lib/products/mutations";
 
 export default async function EditProductPage({
@@ -9,7 +10,10 @@ export default async function EditProductPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const product = await getProductForEdit(id);
+  const [product, categories] = await Promise.all([
+    getProductForEdit(id),
+    listCategories(),
+  ]);
   if (!product) notFound();
 
   return (
@@ -20,15 +24,20 @@ export default async function EditProductPage({
       </div>
       <ProductForm
         mode="edit"
+        availableCategories={categories.map((category) => ({
+          id: category.id,
+          name: category.name,
+          slug: category.slug,
+        }))}
         initial={{
           ...product,
-          reviews: product.reviews.map((r) => ({
-            id: r.id,
-            author: r.author,
-            rating: r.rating,
-            title: r.title ?? "",
-            body: r.body,
-            createdAt: r.createdAt,
+          reviews: product.reviews.map((review) => ({
+            id: review.id,
+            author: review.author,
+            rating: review.rating,
+            title: review.title ?? "",
+            body: review.body,
+            createdAt: review.createdAt,
           })),
         }}
       />

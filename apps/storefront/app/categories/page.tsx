@@ -1,7 +1,9 @@
 import Link from "next/link";
 
 import { ArrowRightIcon } from "@/components/icons";
-import { allCategories, orbit } from "@/lib/orbit";
+import type { StorefrontCategory } from "@orbit/next";
+
+import { orbit } from "@/lib/orbit";
 
 export const metadata = {
   title: "Categories",
@@ -9,11 +11,11 @@ export const metadata = {
 };
 
 export default async function CategoriesPage() {
-  let categories: Awaited<ReturnType<typeof allCategories>> = [];
+  let categories: StorefrontCategory[] = [];
   let reachable = true;
 
   try {
-    categories = allCategories(await orbit.listProducts());
+    categories = await orbit.listCategories();
   } catch {
     reachable = false;
   }
@@ -37,14 +39,14 @@ export default async function CategoriesPage() {
       </h1>
       <p className="mt-sm mb-lg max-w-3xl text-body-lg text-on-surface-variant">
         {reachable
-          ? "Categories come from the products themselves — an empty one never appears here."
+          ? "Every category is a page of its own, with its own introduction."
           : "The catalog is temporarily unreachable, so categories cannot be listed."}
       </p>
 
       {categories.length === 0 ? (
         <p className="rounded-lg border border-outline-variant bg-surface-container-lowest p-lg text-body-md text-on-surface-variant shadow-card">
           {reachable
-            ? "No published product carries a category yet."
+            ? "No categories have been created yet."
             : "Please try again in a moment."}
         </p>
       ) : (
@@ -59,9 +61,14 @@ export default async function CategoriesPage() {
                   <span className="block text-headline-md text-on-surface">
                     {category.name}
                   </span>
-                  <span className="text-body-sm text-on-surface-variant">
-                    {category.count}{" "}
-                    {category.count === 1 ? "product" : "products"}
+                  {category.description ? (
+                    <span className="mt-xs block line-clamp-2 text-body-sm text-on-surface-variant">
+                      {category.description}
+                    </span>
+                  ) : null}
+                  <span className="mt-xs block text-body-sm text-on-surface-variant">
+                    {category.productCount}{" "}
+                    {category.productCount === 1 ? "product" : "products"}
                   </span>
                 </span>
                 <span

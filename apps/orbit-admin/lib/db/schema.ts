@@ -424,6 +424,69 @@ export const productMedia = pgTable(
 );
 
 /* -------------------------------------------------------------------------- */
+/*  categories + product_categories (archive pages)                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A category is a page in its own right, not just a label on a product: it has
+ * a slug that is a URL, copy that introduces the archive, and its own SEO
+ * meta. Products point at it through `product_categories`.
+ */
+export const categories = pgTable(
+  "categories",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: varchar("slug", { length: 255 }).notNull(),
+    name: varchar("name", { length: 160 }).notNull(),
+    /** Intro copy shown on the archive page, above the product grid. */
+    description: text("description"),
+    /** Overrides the derived <title>/<meta description> on the archive page. */
+    meta: jsonb("meta").$type<ProductMeta>().notNull().default({}),
+    /** Manual ordering for the nav; ties break on name. */
+    position: integer("position").notNull().default(0),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("categories_slug_unique").on(table.slug),
+    index("categories_position_idx").on(table.position),
+  ],
+);
+
+export const productCategories = pgTable(
+  "product_categories",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    // Cascade: unfiling a product is what deleting a category means.
+    categoryId: uuid("category_id")
+      .notNull()
+      .references(() => categories.id, { onDelete: "cascade" }),
+    /** Exactly one per product carries the label and the breadcrumb. */
+    isPrimary: boolean("is_primary").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("product_categories_unique").on(
+      table.productId,
+      table.categoryId,
+    ),
+    index("product_categories_category_idx").on(table.categoryId),
+  ],
+);
+
+/* -------------------------------------------------------------------------- */
 /*  orders + order_items (storefront checkout)                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -631,6 +694,9 @@ export type MediaAsset = typeof mediaAssets.$inferSelect;
 export type NewMediaAsset = typeof mediaAssets.$inferInsert;
 export type ProductMedia = typeof productMedia.$inferSelect;
 export type NewProductMedia = typeof productMedia.$inferInsert;
+export type Category = typeof categories.$inferSelect;
+export type NewCategory = typeof categories.$inferInsert;
+export type ProductCategoryLink = typeof productCategories.$inferSelect;
 export type Order = typeof orders.$inferSelect;
 export type NewOrder = typeof orders.$inferInsert;
 export type OrderItem = typeof orderItems.$inferSelect;

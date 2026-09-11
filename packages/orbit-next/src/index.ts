@@ -13,7 +13,8 @@ export type StorefrontImage = {
   position: number;
 };
 
-export type StorefrontCategory = {
+/** How a product refers to a category: enough to label and link it. */
+export type StorefrontProductCategory = {
   slug: string;
   name: string;
   isPrimary: boolean;
@@ -31,7 +32,7 @@ export type StorefrontProduct = {
   currency: string;
   inStock: boolean;
   images: StorefrontImage[];
-  categories: StorefrontCategory[];
+  categories: StorefrontProductCategory[];
 };
 
 export type OrbitClientOptions = {
@@ -65,6 +66,19 @@ export type OrbitClientOptions = {
   revalidate?: number;
 };
 
+/**
+ * A category archive page: its own URL, its own copy, its own SEO. Product
+ * counts are of published products only.
+ */
+export type StorefrontCategory = {
+  slug: string;
+  name: string;
+  description: string | null;
+  meta: { title?: string; description?: string; keywords?: string };
+  position: number;
+  productCount: number;
+};
+
 /** What a storefront sends to place an order. Deliberately no prices. */
 export type OrderInput = {
   email: string;
@@ -93,6 +107,8 @@ export type OrderConfirmation = {
 export interface OrbitClient {
   listProducts(): Promise<StorefrontProduct[]>;
   getProduct(slug: string): Promise<StorefrontProduct | null>;
+  listCategories(): Promise<StorefrontCategory[]>;
+  getCategory(slug: string): Promise<StorefrontCategory | null>;
   /**
    * Place an order. Server-side only: it presents the write token, which must
    * never reach a browser.
@@ -198,6 +214,23 @@ export function createOrbitClient(
           `/api/storefront/products/${encodeURIComponent(slug)}`,
         );
         return withResolvedImages(product, assetBaseUrl);
+      } catch (error) {
+        if (error instanceof OrbitApiError && error.status === 404) {
+          return null;
+        }
+        throw error;
+      }
+    },
+
+    listCategories() {
+      return request<StorefrontCategory[]>("/api/storefront/categories");
+    },
+
+    async getCategory(slug: string) {
+      try {
+        return await request<StorefrontCategory>(
+          `/api/storefront/categories/${encodeURIComponent(slug)}`,
+        );
       } catch (error) {
         if (error instanceof OrbitApiError && error.status === 404) {
           return null;

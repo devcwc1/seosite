@@ -7,8 +7,10 @@ import {
   productContent,
   productMedia,
   products,
+  type ProductCategory,
   type ProductImage,
 } from "@/lib/db/schema";
+import { categoriesForProducts } from "@/lib/categories/mutations";
 import { toStorefrontProduct, type StorefrontProductRow } from "./mapper";
 
 /** Read model behind the public storefront API. */
@@ -25,7 +27,8 @@ const selection = {
   title: productContent.title,
   shortInfo: productContent.shortInfo,
   description: productContent.description,
-  categories: productContent.categories,
+  /** Legacy jsonb categories — fallback for rows not yet backfilled. */
+  legacyCategories: productContent.categories,
   /** Legacy jsonb gallery — only a fallback for rows not yet backfilled. */
   legacyImages: productContent.images,
 };
@@ -50,6 +53,7 @@ type BaseRow = Awaited<ReturnType<typeof selectPublished>>[number];
 // Fails the build if the query stops producing what the mapper expects.
 type AssertRowMatchesMapper = BaseRow & {
   images: ProductImage[];
+  categories: ProductCategory[];
 } extends StorefrontProductRow
   ? true
   : never;
@@ -95,19 +99,25 @@ async function galleriesByProduct(
   return galleries;
 }
 
-async function withGalleries(rows: BaseRow[]): Promise<StorefrontProductRow[]> {
-  const galleries = await galleriesByProduct(rows.map((row) => row.id));
+async function withRelations(rows: BaseRow[]): Promise<StorefrontProductRow[]> {
+  const ids = rows.map((row) => row.id);
+  const [galleries, categories] = await Promise.all([
+    galleriesByProduct(ids),
+    categoriesForProducts(ids),
+  ]);
+
   return rows.map((row) => ({
     ...row,
-    // `product_media` is authoritative; the snapshot jsonb is only read for
-    // pre-ORB-501 rows that no editor has saved since (e.g. seeded demos).
+    // The join tables are authoritative; the snapshot jsonb is only read for
+    // rows that predate them and that no editor has saved since.
     images: galleries.get(row.id) ?? row.legacyImages,
+    categories: categories.get(row.id) ?? row.legacyCategories,
   }));
 }
 
 export async function listStorefrontProducts(): Promise<StorefrontProduct[]> {
   const rows = await selectPublished().orderBy(products.createdAt);
-  return (await withGalleries(rows)).map(toStorefrontProduct);
+  return (await withRelations(rows)).map(toStorefrontProduct);
 }
 
 export async function getStorefrontProduct(
@@ -116,6 +126,6 @@ export async function getStorefrontProduct(
   const rows = await selectPublished(eq(products.slug, slug)).limit(1);
   if (rows.length === 0) return null;
 
-  const [row] = await withGalleries(rows);
+  const [row] = await withRelations(rows);
   return row ? toStorefrontProduct(row) : null;
 }

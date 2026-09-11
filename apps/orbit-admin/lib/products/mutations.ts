@@ -3,6 +3,13 @@ import "server-only";
 import { eq, or } from "drizzle-orm";
 
 import { recordAudit } from "@/lib/audit";
+import {
+  getProductCategories,
+  normalizeSelections,
+  resolveCategorySnapshot,
+  setProductCategories,
+  type ProductCategorySelection,
+} from "@/lib/categories/mutations";
 import { getProductGallery, setProductGallery } from "@/lib/media/assets";
 import { db } from "@/lib/db";
 import {
@@ -35,6 +42,7 @@ export type ProductEditData = {
   inStock: boolean;
   stockQuantity: number;
   images: { assetId: string; url: string; alt: string }[];
+  categories: ProductCategorySelection[];
   meta: ProductMeta;
   reviews: ProductReview[];
 };
@@ -55,6 +63,14 @@ function toReviews(input: ProductParsed): ProductReview[] {
     body: review.body,
     createdAt: review.createdAt,
     ...(review.title ? { title: review.title } : {}),
+  }));
+}
+
+/** Category selections as `setProductCategories` wants them. */
+function categorySelections(input: ProductParsed): ProductCategorySelection[] {
+  return input.categories.map((entry) => ({
+    categoryId: entry.categoryId,
+    isPrimary: entry.isPrimary,
   }));
 }
 
@@ -116,6 +132,7 @@ export async function createProduct(
   const stockQuantity = input.inStock ? input.stockQuantity : 0;
   const meta = toMeta(input);
   const reviews = toReviews(input);
+  const selections = normalizeSelections(categorySelections(input));
 
   const id = await db.transaction(async (tx) => {
     const [product] = await tx
@@ -141,6 +158,7 @@ export async function createProduct(
         shortInfo: input.shortInfo || null,
         description: input.description || null,
         images: [],
+        // Categories live in product_categories now, like images.
         categories: [],
         meta,
         reviews,
@@ -151,16 +169,19 @@ export async function createProduct(
       .returning({ id: productContent.id });
     if (!content) throw new Error("Failed to insert product content");
 
+    const categorySnapshot = await resolveCategorySnapshot(tx, selections);
+
     await tx.insert(productContentRevisions).values({
       contentId: content.id,
       productId: product.id,
       version: 1,
-      data: buildSnapshot(input, meta, reviews, [], "en"),
+      data: buildSnapshot(input, meta, reviews, categorySnapshot, "en"),
       changeNote: "Created",
       editedBy: actorId,
     });
 
     await setProductGallery(tx, product.id, galleryItems(input));
+    await setProductCategories(tx, product.id, selections);
 
     await tx
       .update(products)
@@ -207,8 +228,8 @@ export async function updateProduct(
       .where(eq(productContent.productId, id))
       .limit(1);
 
-    // Categories are not managed by this form yet, so preserve them.
-    const categories = content?.categories ?? [];
+    const selections = normalizeSelections(categorySelections(input));
+    const categorySnapshot = await resolveCategorySnapshot(tx, selections);
     const locale = content?.locale ?? "en";
     const nextVersion = (content?.version ?? 0) + 1;
 
@@ -221,6 +242,7 @@ export async function updateProduct(
           shortInfo: input.shortInfo || null,
           description: input.description || null,
           images: [],
+          categories: [],
           meta,
           reviews,
           version: nextVersion,
@@ -238,7 +260,7 @@ export async function updateProduct(
           shortInfo: input.shortInfo || null,
           description: input.description || null,
           images: [],
-          categories,
+          categories: [],
           meta,
           reviews,
           locale,
@@ -254,12 +276,13 @@ export async function updateProduct(
       contentId,
       productId: id,
       version: nextVersion,
-      data: buildSnapshot(input, meta, reviews, categories, locale),
+      data: buildSnapshot(input, meta, reviews, categorySnapshot, locale),
       changeNote: "Updated",
       editedBy: actorId,
     });
 
     await setProductGallery(tx, id, galleryItems(input));
+    await setProductCategories(tx, id, selections);
 
     await tx
       .update(products)
@@ -328,7 +351,10 @@ export async function getProductForEdit(
     .where(eq(productContent.productId, id))
     .limit(1);
 
-  const gallery = await getProductGallery(id);
+  const [gallery, categorySelections] = await Promise.all([
+    getProductGallery(id),
+    getProductCategories(id),
+  ]);
 
   return {
     id: product.id,
@@ -347,7 +373,9 @@ export async function getProductForEdit(
       url: item.url,
       alt: item.alt ?? "",
     })),
+    categories: categorySelections,
     meta: content?.meta ?? {},
     reviews: content?.reviews ?? [],
   };
 }
+

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   Boxes,
+  FolderTree,
   Images,
   LayoutDashboard,
   LogOut,
@@ -16,6 +17,7 @@ import type { User } from "@/lib/db/schema";
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/products", label: "Products", icon: Boxes },
+  { href: "/categories", label: "Categories", icon: FolderTree },
   { href: "/orders", label: "Orders", icon: Receipt },
   { href: "/media", label: "Media", icon: Images },
   { href: "/users", label: "Users", icon: Users },

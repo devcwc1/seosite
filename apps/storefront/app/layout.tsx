@@ -1,15 +1,12 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import Image from "next/image";
 import Link from "next/link";
 
-import {
-  ArrowUpIcon,
-  CartIcon,
-  PharmacyMark,
-  SearchIcon,
-} from "@/components/icons";
+import logo from "@/public/logo.webp";
+import { ArrowUpIcon, CartIcon, SearchIcon } from "@/components/icons";
 import { countItems, readCart } from "@/lib/cart";
-import { allCategories, orbit } from "@/lib/orbit";
+import { orbit } from "@/lib/orbit";
 
 import "./globals.css";
 
@@ -54,11 +51,11 @@ function SearchField({ className = "" }: { className?: string }) {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  // The nav is built from the catalog's own categories, so it can never offer
-  // a section that holds nothing. A dead content API just means no nav row.
+  // Straight from Orbit: a category an editor has created belongs in the nav
+  // even before anything is filed under it. A dead content API means no row.
   let categories: { slug: string; name: string }[] = [];
   try {
-    categories = allCategories(await orbit.listProducts());
+    categories = await orbit.listCategories();
   } catch {
     categories = [];
   }
@@ -74,12 +71,15 @@ export default async function RootLayout({
         <header className="sticky top-0 z-50 border-b border-outline-variant bg-surface">
           <div className="shell flex flex-col gap-sm py-sm">
             <div className="flex items-center justify-between gap-md">
-              <Link
-                href="/"
-                className="flex items-center gap-xs text-body-lg font-bold whitespace-nowrap text-primary sm:text-headline-md"
-              >
-                <PharmacyMark className="size-6 shrink-0 sm:size-7" />
-                Orbit Storefront
+              <Link href="/" className="flex shrink-0 items-center">
+                {/* Statically imported, so Next knows the intrinsic size and
+                    the header never shifts while it loads. */}
+                <Image
+                  src={logo}
+                  alt="Apotheek 24/7"
+                  priority
+                  className="h-8 w-auto md:h-10"
+                />
               </Link>
 
               <SearchField className="mx-md hidden max-w-[28rem] flex-1 md:block" />
@@ -146,10 +146,11 @@ export default async function RootLayout({
         <footer className="border-t border-outline-variant bg-surface-container-low">
           <div className="shell grid grid-cols-1 gap-lg py-section-gap md:grid-cols-4">
             <div className="flex flex-col gap-sm">
-              <p className="flex items-center gap-xs text-headline-sm text-primary">
-                <PharmacyMark className="size-6" />
-                Orbit Storefront
-              </p>
+              <Image
+                src={logo}
+                alt="Apotheek 24/7"
+                className="h-8 w-auto self-start"
+              />
               <p className="text-body-sm text-on-surface-variant">
                 A reference storefront for the Orbit platform. Every product,
                 price and image here is published from the Orbit admin and read

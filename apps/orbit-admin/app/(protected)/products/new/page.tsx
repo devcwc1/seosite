@@ -1,6 +1,9 @@
 import { ProductForm } from "@/components/products/product-form";
+import { listCategories } from "@/lib/categories/mutations";
 
-export default function NewProductPage() {
+export default async function NewProductPage() {
+  const categories = await listCategories();
+
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <div>
@@ -9,7 +12,14 @@ export default function NewProductPage() {
           Add a new product to the catalog.
         </p>
       </div>
-      <ProductForm mode="create" />
+      <ProductForm
+        mode="create"
+        availableCategories={categories.map((category) => ({
+          id: category.id,
+          name: category.name,
+          slug: category.slug,
+        }))}
+      />
     </div>
   );
 }
