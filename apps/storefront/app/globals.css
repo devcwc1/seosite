@@ -213,3 +213,73 @@
   font-weight: 600;
   line-height: 16px;
 }
+
+/*
+ * Rich text from the admin's editor. The markup is constrained by the
+ * server-side allowlist, so this styles exactly those tags and nothing else.
+ */
+.rich-text > :first-child {
+  margin-top: 0;
+}
+
+.rich-text > :last-child {
+  margin-bottom: 0;
+}
+
+.rich-text h2 {
+  margin: var(--spacing-lg) 0 var(--spacing-sm);
+  font-size: var(--text-headline-md);
+  line-height: var(--text-headline-md--line-height);
+  font-weight: 600;
+  color: var(--color-on-surface);
+  text-wrap: balance;
+}
+
+.rich-text h3,
+.rich-text h4 {
+  margin: var(--spacing-md) 0 var(--spacing-xs);
+  font-size: var(--text-headline-sm);
+  line-height: var(--text-headline-sm--line-height);
+  font-weight: 600;
+  color: var(--color-on-surface);
+}
+
+.rich-text p {
+  margin: 0 0 var(--spacing-sm);
+}
+
+.rich-text ul,
+.rich-text ol {
+  margin: 0 0 var(--spacing-sm);
+  padding-left: var(--spacing-md);
+}
+
+.rich-text ul {
+  list-style: disc;
+}
+
+.rich-text ol {
+  list-style: decimal;
+}
+
+.rich-text li {
+  margin-bottom: var(--spacing-base);
+}
+
+.rich-text blockquote {
+  margin: var(--spacing-md) 0;
+  padding-left: var(--spacing-sm);
+  border-left: 3px solid var(--color-primary-fixed);
+  color: var(--color-on-surface-variant);
+}
+
+.rich-text a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.rich-text strong {
+  font-weight: 600;
+  color: var(--color-on-surface);
+}

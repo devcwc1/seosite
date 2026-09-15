@@ -323,7 +323,13 @@ export default async function ProductPage({
         <div className="max-w-prose text-body-lg text-on-surface-variant">
           {activeTab === "description" ? (
             product.description ? (
-              <p className="whitespace-pre-line">{product.description}</p>
+              /* Rich text from the admin. Orbit sanitises it on write against
+                 a strict allowlist, so what arrives here is headings,
+                 paragraphs, lists and links — nothing executable. */
+              <div
+                className="rich-text"
+                dangerouslySetInnerHTML={{ __html: product.description }}
+              />
             ) : (
               <p>No description has been published for this product yet.</p>
             )

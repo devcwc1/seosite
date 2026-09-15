@@ -18,6 +18,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { MediaPicker, type PickedMedia } from "@/components/media/media-picker";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -324,13 +325,16 @@ export function ProductForm({
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              rows={6}
+            <Label>Description</Label>
+            <RichTextEditor
               value={values.description}
-              onChange={(e) => set("description", e.target.value)}
+              onChange={(html) => set("description", html)}
+              ariaLabel="Product description"
             />
+            <p className="text-xs text-muted-foreground">
+              Headings, lists and links are kept; anything else is stripped
+              when the product is saved.
+            </p>
             <FieldError message={errors.description} />
           </div>
 

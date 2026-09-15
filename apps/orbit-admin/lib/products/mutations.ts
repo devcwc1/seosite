@@ -10,6 +10,7 @@ import {
   setProductCategories,
   type ProductCategorySelection,
 } from "@/lib/categories/mutations";
+import { sanitizeRichText } from "@/lib/content/sanitize";
 import { getProductGallery, setProductGallery } from "@/lib/media/assets";
 import { db } from "@/lib/db";
 import {
@@ -46,6 +47,15 @@ export type ProductEditData = {
   meta: ProductMeta;
   reviews: ProductReview[];
 };
+
+/**
+ * Description is rich text. It is sanitised here, on write, because this is
+ * the last point the application controls before it is stored and later
+ * rendered as HTML by the storefront.
+ */
+function toDescription(input: ProductParsed): string | null {
+  return sanitizeRichText(input.description) || null;
+}
 
 function toMeta(input: ProductParsed): ProductMeta {
   const meta: ProductMeta = {};
@@ -91,7 +101,7 @@ function buildSnapshot(
   return {
     title: input.title,
     shortInfo: input.shortInfo || null,
-    description: input.description || null,
+    description: toDescription(input),
     // Images live in product_media now; the content snapshot no longer carries them.
     images: [],
     categories,
@@ -156,7 +166,7 @@ export async function createProduct(
         productId: product.id,
         title: input.title,
         shortInfo: input.shortInfo || null,
-        description: input.description || null,
+        description: toDescription(input),
         images: [],
         // Categories live in product_categories now, like images.
         categories: [],
@@ -240,7 +250,7 @@ export async function updateProduct(
         .set({
           title: input.title,
           shortInfo: input.shortInfo || null,
-          description: input.description || null,
+          description: toDescription(input),
           images: [],
           categories: [],
           meta,
@@ -258,7 +268,7 @@ export async function updateProduct(
           productId: id,
           title: input.title,
           shortInfo: input.shortInfo || null,
-          description: input.description || null,
+          description: toDescription(input),
           images: [],
           categories: [],
           meta,
