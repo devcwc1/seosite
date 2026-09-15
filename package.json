@@ -15,7 +15,8 @@
     "test": "npm run test --workspaces --if-present",
     "db:generate": "npm run db:generate -w orbit-admin",
     "db:migrate": "npm run db:migrate -w orbit-admin",
-    "db:seed": "npm run db:seed -w orbit-admin"
+    "db:seed": "npm run db:seed -w orbit-admin",
+    "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "engines": {
     "node": ">=20"

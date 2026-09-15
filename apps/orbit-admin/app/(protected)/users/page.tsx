@@ -1,8 +1,8 @@
-import { redirect } from "next/navigation";
+import { forbidden } from "next/navigation";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
+import { StatusChip } from "@/components/ui/status-chip";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Table,
@@ -16,15 +16,12 @@ import { DeleteUserButton } from "@/components/users/delete-user-button";
 import { getCurrentSession, isAdmin } from "@/lib/auth/session";
 import { listUsers } from "@/lib/users/mutations";
 
-const ROLE_VARIANT = {
-  admin: "default",
-  editor: "secondary",
-  viewer: "outline",
-} as const;
-
 export default async function UsersPage() {
   const session = await getCurrentSession();
-  if (!session || !isAdmin(session.user)) redirect("/dashboard");
+  // 403, not a redirect: the reader is authenticated and the page exists,
+  // they simply hold the wrong role, and a probe should be able to tell
+  // those apart. UI hiding is courtesy; this is the control (FR-SEC-006).
+  if (!session || !isAdmin(session.user)) forbidden();
 
   const users = await listUsers();
   const currentId = session.user.id;
@@ -67,7 +64,7 @@ export default async function UsersPage() {
                   ) : null}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={ROLE_VARIANT[u.role]}>{u.role}</Badge>
+                  <StatusChip domain="role" value={u.role} />
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {u.mfaEnforced ? "Enforced" : "Optional"} ·{" "}

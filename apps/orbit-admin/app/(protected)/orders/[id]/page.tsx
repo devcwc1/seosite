@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { Badge } from "@/components/ui/badge";
+import { StatusChip } from "@/components/ui/status-chip";
 import {
   Card,
   CardContent,
@@ -20,17 +20,6 @@ import {
 import { OrderStatusActions } from "@/components/orders/order-status-actions";
 import { formatPrice } from "@/lib/format";
 import { getOrder, NEXT_STATUSES } from "@/lib/orders/mutations";
-import type { OrderStatus } from "@/lib/db/schema";
-
-const STATUS_VARIANT: Record<
-  OrderStatus,
-  "default" | "secondary" | "outline" | "destructive"
-> = {
-  pending: "secondary",
-  paid: "default",
-  shipped: "outline",
-  cancelled: "destructive",
-};
 
 export default async function OrderDetailPage({
   params,
@@ -51,7 +40,7 @@ export default async function OrderDetailPage({
             <h1 className="text-2xl font-semibold tracking-tight">
               {order.orderNumber}
             </h1>
-            <Badge variant={STATUS_VARIANT[order.status]}>{order.status}</Badge>
+            <StatusChip domain="order" value={order.status} />
           </div>
           <p className="text-sm text-muted-foreground">
             Placed {order.createdAt.toLocaleString()}

@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  # A new push supersedes the run in flight for the same ref.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    # The admin suite is deliberately integration-first: it asserts against a
+    # real Postgres rather than a mock, because the things worth testing here
+    # are constraints, cascades and transactions, and a mock has none.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: orbit
+          POSTGRES_PASSWORD: orbit
+          POSTGRES_DB: orbit_admin
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U orbit -d orbit_admin"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://orbit:orbit@localhost:5432/orbit_admin
+      # Order intake refuses writes without it, so the suite needs one set.
+      ORBIT_WRITE_TOKEN: ci-write-token
+      MEDIA_DIR: ${{ github.workspace }}/.ci-media
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Apply migrations
+        run: npm run db:migrate
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Unit, integration, and the axe accessibility checks that ORB-106 asks
+      # for — they live in the same suite, so a11y cannot be skipped without
+      # skipping the tests.
+      - name: Test
+        run: npm test

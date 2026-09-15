@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Pencil } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
+import { StatusChip } from "@/components/ui/status-chip";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -15,12 +15,6 @@ import { ProductGalleryManager } from "@/components/products/product-gallery-man
 import { getCurrentSession, isWriter } from "@/lib/auth/session";
 import { getProductForEdit } from "@/lib/products/mutations";
 import { formatPrice } from "@/lib/format";
-
-const STATUS_VARIANT = {
-  published: "default",
-  draft: "secondary",
-  archived: "outline",
-} as const;
 
 export default async function ProductDetailPage({
   params,
@@ -44,9 +38,7 @@ export default async function ProductDetailPage({
             <h1 className="text-2xl font-semibold tracking-tight">
               {product.title || "Untitled product"}
             </h1>
-            <Badge variant={STATUS_VARIANT[product.status]}>
-              {product.status}
-            </Badge>
+            <StatusChip domain="product" value={product.status} />
           </div>
           <p className="text-sm text-muted-foreground">
             {product.sku} · {product.slug}

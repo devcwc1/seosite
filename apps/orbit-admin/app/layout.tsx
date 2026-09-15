@@ -23,12 +23,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
-      </body>
+    /*
+      The font variables belong on <html>, not <body>: globals.css applies
+      `font-sans` to the html element, and a custom property is only visible
+      to the element that declares it and its descendants. Declared on <body>
+      they were invisible to the very rule that consumes them, so the whole
+      admin fell back to the browser's default serif.
+    */
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
+      <body className="antialiased">{children}</body>
     </html>
   );
 }

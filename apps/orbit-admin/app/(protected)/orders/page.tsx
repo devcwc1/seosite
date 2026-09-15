@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { Badge } from "@/components/ui/badge";
+import { StatusChip } from "@/components/ui/status-chip";
 import {
   Table,
   TableBody,
@@ -11,17 +11,6 @@ import {
 } from "@/components/ui/table";
 import { formatPrice } from "@/lib/format";
 import { listOrders } from "@/lib/orders/mutations";
-import type { OrderStatus } from "@/lib/db/schema";
-
-const STATUS_VARIANT: Record<
-  OrderStatus,
-  "default" | "secondary" | "outline" | "destructive"
-> = {
-  pending: "secondary",
-  paid: "default",
-  shipped: "outline",
-  cancelled: "destructive",
-};
 
 export default async function OrdersPage() {
   const orders = await listOrders();
@@ -78,9 +67,7 @@ export default async function OrdersPage() {
                     {order.createdAt.toLocaleString()}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={STATUS_VARIANT[order.status]}>
-                      {order.status}
-                    </Badge>
+                    <StatusChip domain="order" value={order.status} />
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {formatPrice(order.totalCents, order.currency)}

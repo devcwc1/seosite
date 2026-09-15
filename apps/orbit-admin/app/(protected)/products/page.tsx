@@ -2,7 +2,7 @@ import { asc, desc, eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
+import { StatusChip } from "@/components/ui/status-chip";
 import { buttonVariants } from "@/components/ui/button";
 import { DeleteProductButton } from "@/components/products/delete-product-button";
 import {
@@ -17,12 +17,6 @@ import { getCurrentSession, isWriter } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { mediaAssets, productContent, productMedia, products } from "@/lib/db/schema";
 import { formatPrice } from "@/lib/format";
-
-const STATUS_VARIANT = {
-  published: "default",
-  draft: "secondary",
-  archived: "outline",
-} as const;
 
 type Thumb = { url: string; alt: string | null };
 
@@ -151,9 +145,7 @@ export default async function ProductsPage() {
                       {row.sku}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={STATUS_VARIANT[row.status]}>
-                        {row.status}
-                      </Badge>
+                      <StatusChip domain="product" value={row.status} />
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {formatPrice(row.priceCents, row.currency)}

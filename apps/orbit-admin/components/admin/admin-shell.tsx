@@ -1,29 +1,20 @@
-import Link from "next/link";
-import {
-  Boxes,
-  FolderTree,
-  Images,
-  LayoutDashboard,
-  LogOut,
-  Receipt,
-  Settings,
-  Users,
-} from "lucide-react";
+import { LogOut } from "lucide-react";
 
-import { logoutAction } from "@/lib/auth/actions";
+import { Breadcrumbs } from "@/components/admin/breadcrumbs";
+import { SidebarNav } from "@/components/admin/sidebar-nav";
 import { Button } from "@/components/ui/button";
+import { StatusChip } from "@/components/ui/status-chip";
+import { logoutAction } from "@/lib/auth/actions";
+import { navigationFor } from "@/lib/navigation/nav";
 import type { User } from "@/lib/db/schema";
 
-const NAV = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/products", label: "Products", icon: Boxes },
-  { href: "/categories", label: "Categories", icon: FolderTree },
-  { href: "/orders", label: "Orders", icon: Receipt },
-  { href: "/media", label: "Media", icon: Images },
-  { href: "/users", label: "Users", icon: Users },
-  { href: "/settings", label: "Settings", icon: Settings },
-];
-
+/**
+ * The authenticated shell every protected screen composes into — ORB-106.
+ *
+ * Laid out for a 1440px reference and a 1280px minimum: the content column
+ * stops at `--spacing-shell-max` so a table on a 2560px monitor stays
+ * readable instead of stretching edge to edge.
+ */
 export function AdminShell({
   user,
   children,
@@ -31,43 +22,61 @@ export function AdminShell({
   user: User;
   children: React.ReactNode;
 }) {
+  // Computed here, on the server, from the session — never in the browser.
+  const navigation = navigationFor(user);
+
   return (
-    <div className="flex min-h-screen bg-muted/20">
-      <aside className="hidden w-60 shrink-0 flex-col border-r bg-background sm:flex">
-        <div className="flex h-14 items-center border-b px-5 font-semibold">
+    <div className="bg-muted/20 flex min-h-screen">
+      {/*
+        First thing in the tab order: a keyboard user should not have to walk
+        the whole sidebar on every navigation to reach the page (WCAG 2.4.1).
+      */}
+      <a
+        href="#main"
+        className="bg-background focus-visible:ring-ring sr-only rounded-md px-4 py-2 focus-visible:not-sr-only focus-visible:absolute focus-visible:top-2 focus-visible:left-2 focus-visible:z-50 focus-visible:ring-[3px]"
+      >
+        Skip to content
+      </a>
+
+      <aside className="bg-background hidden w-shell-sidebar shrink-0 flex-col border-r sm:flex">
+        <div className="flex h-shell-bar items-center border-b px-5 text-section-title">
           Orbit Admin
         </div>
-        <nav className="flex flex-1 flex-col gap-1 p-3">
-          {NAV.map(({ href, label, icon: Icon }) => (
-            <Link
-              key={href}
-              href={href}
-              className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <Icon className="size-4" aria-hidden />
-              {label}
-            </Link>
-          ))}
+        <nav aria-label="Main" className="flex-1 p-3">
+          <SidebarNav items={navigation} />
         </nav>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center justify-between border-b bg-background px-6">
-          <span className="text-sm text-muted-foreground">
-            Signed in as <span className="font-medium text-foreground">{user.email}</span>
-            <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs uppercase">
-              {user.role}
+        <header className="bg-background flex h-shell-bar items-center justify-between gap-4 border-b px-6">
+          <Breadcrumbs />
+
+          <div className="ml-auto flex items-center gap-3">
+            {/*
+              FR-API-003. Hard-coded until the sync feature reports real
+              state; it reads its colour from the same registry as every
+              other chip, so wiring it up later is a data change, not a
+              styling one.
+            */}
+            <StatusChip domain="sync" value="synced" className="hidden md:inline-flex" />
+
+            <span className="text-body text-muted-foreground hidden lg:inline">
+              {user.email}
             </span>
-          </span>
-          <form action={logoutAction}>
-            <Button type="submit" variant="ghost" size="sm">
-              <LogOut className="size-4" aria-hidden />
-              Sign out
-            </Button>
-          </form>
+            <StatusChip domain="role" value={user.role} />
+
+            <form action={logoutAction}>
+              <Button type="submit" variant="ghost" size="sm">
+                <LogOut className="size-4" aria-hidden />
+                Sign out
+              </Button>
+            </form>
+          </div>
         </header>
 
-        <main className="flex-1 p-6">{children}</main>
+        <main id="main" className="mx-auto w-full max-w-shell-max flex-1 p-6">
+          {children}
+        </main>
       </div>
     </div>
   );
