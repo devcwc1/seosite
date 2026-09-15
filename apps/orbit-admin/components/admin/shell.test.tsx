@@ -113,6 +113,29 @@ describe("Breadcrumbs", () => {
     expect(screen.getByText("#0d18873d")).toBeInTheDocument();
   });
 
+  it("never nests one list item inside another", () => {
+    // BreadcrumbSeparator renders its own <li>. Nested inside BreadcrumbItem
+    // it is invalid HTML, and React fails hydration on every page with a
+    // trail — which axe does not flag, so it is asserted directly.
+    pathname.current = "/products/new";
+    const { container } = renderUI(<Breadcrumbs />);
+
+    expect(container.querySelectorAll("li li")).toHaveLength(0);
+  });
+
+  it("puts a separator between crumbs and not after the last", () => {
+    pathname.current = "/orders/abc/edit";
+    const { container } = renderUI(<Breadcrumbs />);
+
+    const items = container.querySelectorAll('[data-slot="breadcrumb-item"]');
+    const separators = container.querySelectorAll(
+      '[data-slot="breadcrumb-separator"]',
+    );
+
+    expect(items).toHaveLength(3);
+    expect(separators).toHaveLength(2);
+  });
+
   it("passes axe", async () => {
     pathname.current = "/products/new";
     const { container } = renderUI(<Breadcrumbs />);

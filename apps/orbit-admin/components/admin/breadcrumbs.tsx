@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import { usePathname } from "next/navigation";
 
 import {
@@ -56,18 +57,21 @@ export function Breadcrumbs() {
           const last = index === segments.length - 1;
 
           return (
-            <BreadcrumbItem key={href}>
-              {last ? (
-                <BreadcrumbPage>{labelFor(segment)}</BreadcrumbPage>
-              ) : (
-                <>
+            // The separator renders its own <li>, so it is a sibling of the
+            // item, never a child. Nested inside one it is invalid HTML and
+            // React fails hydration on every page that shows a trail.
+            <Fragment key={href}>
+              <BreadcrumbItem>
+                {last ? (
+                  <BreadcrumbPage>{labelFor(segment)}</BreadcrumbPage>
+                ) : (
                   <BreadcrumbLink href={href}>
                     {labelFor(segment)}
                   </BreadcrumbLink>
-                  <BreadcrumbSeparator />
-                </>
-              )}
-            </BreadcrumbItem>
+                )}
+              </BreadcrumbItem>
+              {last ? null : <BreadcrumbSeparator />}
+            </Fragment>
           );
         })}
       </BreadcrumbList>
