@@ -1,6 +1,7 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { ProductForm } from "@/components/products/product-form";
+import { getCurrentSession, isWriter } from "@/lib/auth/session";
 import { listCategories } from "@/lib/categories/mutations";
 import { getProductForEdit } from "@/lib/products/mutations";
 
@@ -10,6 +11,11 @@ export default async function EditProductPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+
+  // A viewer can read the product, just not this form.
+  const session = await getCurrentSession();
+  if (!session || !isWriter(session.user)) redirect(`/products/${id}`);
+
   const [product, categories] = await Promise.all([
     getProductForEdit(id),
     listCategories(),

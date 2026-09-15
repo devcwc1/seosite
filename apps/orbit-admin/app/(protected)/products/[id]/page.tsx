@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ProductGalleryManager } from "@/components/products/product-gallery-manager";
+import { getCurrentSession, isWriter } from "@/lib/auth/session";
 import { getProductForEdit } from "@/lib/products/mutations";
 import { formatPrice } from "@/lib/format";
 
@@ -27,8 +28,13 @@ export default async function ProductDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const product = await getProductForEdit(id);
+  const [product, session] = await Promise.all([
+    getProductForEdit(id),
+    getCurrentSession(),
+  ]);
   if (!product) notFound();
+
+  const canWrite = !!session && isWriter(session.user);
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
@@ -46,13 +52,15 @@ export default async function ProductDetailPage({
             {product.sku} · {product.slug}
           </p>
         </div>
-        <Link
-          href={`/products/${product.id}/edit`}
-          className={buttonVariants({ variant: "outline" })}
-        >
-          <Pencil className="size-4" aria-hidden />
-          Edit
-        </Link>
+        {canWrite ? (
+          <Link
+            href={`/products/${product.id}/edit`}
+            className={buttonVariants({ variant: "outline" })}
+          >
+            <Pencil className="size-4" aria-hidden />
+            Edit
+          </Link>
+        ) : null}
       </div>
 
       <Card>
@@ -97,13 +105,14 @@ export default async function ProductDetailPage({
           <CardDescription>
             {product.images.length}{" "}
             {product.images.length === 1 ? "image" : "images"} attached to this
-            product. Uploads here are attached automatically.
+            product.{canWrite ? " Uploads here are attached automatically." : ""}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <ProductGalleryManager
             productId={product.id}
             images={product.images}
+            canWrite={canWrite}
           />
         </CardContent>
       </Card>

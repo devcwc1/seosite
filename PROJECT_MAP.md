@@ -305,6 +305,7 @@ Postgres: 39 tests green, `tsc --noEmit` clean, `next build` clean.
 - Not built: real TOTP MFA (stubbed), category editing.
 - Role policy lives in `lib/auth/session.ts` (`isWriter` / `isAdmin`): viewers
   are read-only across product mutations, gallery links and media routes; admins
-  alone manage users. The write **controls are still rendered** for viewers —
-  they get a clear refusal on submit rather than a hidden button.
+  alone manage users. The UI follows the same rule — write controls are hidden
+  from viewers and the two product form pages redirect them — but the server
+  checks remain the authority.
 - Full `docker compose up --build` not yet run end-to-end; no git remote.

@@ -13,7 +13,12 @@ import {
   uploadMedia,
 } from "@/components/media/upload-media";
 
-export function MediaLibrary() {
+export function MediaLibrary({
+  canWrite,
+}: {
+  /** Viewers browse and search the library, but cannot change it. */
+  canWrite: boolean;
+}) {
   const [items, setItems] = useState<MediaAssetDTO[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -92,6 +97,22 @@ export function MediaLibrary() {
     }
   }
 
+  // Only a writer gets drop targets; for a viewer the area is just a frame.
+  const dropHandlers = canWrite
+    ? {
+        onDragOver: (e: React.DragEvent) => {
+          e.preventDefault();
+          setDragOver(true);
+        },
+        onDragLeave: () => setDragOver(false),
+        onDrop: (e: React.DragEvent) => {
+          e.preventDefault();
+          setDragOver(false);
+          void onFiles(e.dataTransfer.files);
+        },
+      }
+    : {};
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3">
@@ -101,24 +122,28 @@ export function MediaLibrary() {
           onChange={(e) => setQuery(e.target.value)}
           className="max-w-xs"
         />
-        <input
-          ref={fileRef}
-          type="file"
-          accept={ACCEPTED_IMAGE_TYPES}
-          multiple
-          className="hidden"
-          onChange={(e) => onFiles(e.target.files)}
-        />
-        <Button
-          type="button"
-          variant="outline"
-          disabled={uploading}
-          onClick={() => fileRef.current?.click()}
-          className="ml-auto"
-        >
-          <Upload className="size-4" aria-hidden />
-          {uploading ? `Uploading ${progress}%` : "Upload"}
-        </Button>
+        {canWrite ? (
+          <>
+            <input
+              ref={fileRef}
+              type="file"
+              accept={ACCEPTED_IMAGE_TYPES}
+              multiple
+              className="hidden"
+              onChange={(e) => onFiles(e.target.files)}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              disabled={uploading}
+              onClick={() => fileRef.current?.click()}
+              className="ml-auto"
+            >
+              <Upload className="size-4" aria-hidden />
+              {uploading ? `Uploading ${progress}%` : "Upload"}
+            </Button>
+          </>
+        ) : null}
       </div>
 
       {uploading ? (
@@ -136,25 +161,18 @@ export function MediaLibrary() {
       ) : null}
 
       <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragOver(false);
-          void onFiles(e.dataTransfer.files);
-        }}
-        className={`rounded-lg border border-dashed p-4 transition-colors ${
-          dragOver ? "border-primary bg-primary/5" : "border-border"
-        }`}
+        {...dropHandlers}
+        className={`rounded-lg border p-4 transition-colors ${
+          canWrite ? "border-dashed" : ""
+        } ${dragOver ? "border-primary bg-primary/5" : "border-border"}`}
       >
         {loading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : items.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            Drop images here or use Upload. JPEG, PNG, WebP or AVIF, max 15 MB.
+            {canWrite
+              ? "Drop images here or use Upload. JPEG, PNG, WebP or AVIF, max 15 MB."
+              : "No media assets yet."}
           </p>
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
@@ -178,26 +196,30 @@ export function MediaLibrary() {
                   </p>
                 </div>
                 <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Edit"
-                    onClick={() => setEditing(item)}
-                    className="bg-background/80"
-                  >
-                    <Pencil className="size-4" aria-hidden />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Delete"
-                    onClick={() => onDelete(item)}
-                    className="bg-background/80"
-                  >
-                    <Trash2 className="size-4" aria-hidden />
-                  </Button>
+                  {canWrite ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Edit"
+                        onClick={() => setEditing(item)}
+                        className="bg-background/80"
+                      >
+                        <Pencil className="size-4" aria-hidden />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Delete"
+                        onClick={() => onDelete(item)}
+                        className="bg-background/80"
+                      >
+                        <Trash2 className="size-4" aria-hidden />
+                      </Button>
+                    </>
+                  ) : null}
                 </div>
               </div>
             ))}
