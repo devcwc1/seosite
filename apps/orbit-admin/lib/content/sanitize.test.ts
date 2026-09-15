@@ -57,9 +57,16 @@ describe("sanitizeRichText", () => {
     expect(clean).toBe("<p>Copy</p>");
   });
 
-  it("refuses h1, because the product title owns the page's only one", () => {
-    // The text survives; only the heading level is taken away.
-    expect(sanitizeRichText("<h1>Shouting</h1>")).not.toContain("<h1>");
+  it("keeps all six heading levels", () => {
+    for (const level of [1, 2, 3, 4, 5, 6]) {
+      const html = `<h${level}>Heading</h${level}>`;
+      expect(sanitizeRichText(html)).toBe(html);
+    }
+  });
+
+  it("does not invent a seventh heading level", () => {
+    // h7 is not a tag; it must be discarded like any other unknown element.
+    expect(sanitizeRichText("<h7>Nope</h7>")).toBe("Nope");
   });
 
   it("normalises every spelling of empty to an empty string", () => {

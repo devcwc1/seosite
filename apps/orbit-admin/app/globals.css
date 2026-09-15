@@ -207,6 +207,13 @@
   outline: none;
 }
 
+.rich-text h1 {
+  margin: 1.5rem 0 0.6rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
 .rich-text h2 {
   margin: 1.25rem 0 0.5rem;
   font-size: 1.25rem;
@@ -222,6 +229,22 @@
   line-height: 1.35;
 }
 
+/* h5 and h6 stop growing and start distinguishing themselves another way —
+   below body size they would be unreadable rather than subordinate. */
+.rich-text h5,
+.rich-text h6 {
+  margin: 0.9rem 0 0.3rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.rich-text h6 {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+}
+
 .rich-text p {
   margin: 0 0 0.75rem;
 }
@@ -235,6 +258,12 @@
 .rich-text ul { list-style: disc; }
 .rich-text ol { list-style: decimal; }
 .rich-text li { margin-bottom: 0.2rem; }
+
+/* Tiptap wraps list-item content in a paragraph. Left alone it would inherit
+   the paragraph's bottom margin and space every bullet like a new block. */
+.rich-text li > p {
+  margin: 0;
+}
 
 .rich-text blockquote {
   margin: 0.75rem 0;
