@@ -63,6 +63,9 @@ afterAll(async () => {
       .where(eq(mediaAssets.id, id))
       .limit(1);
     if (row?.storageKey) await deleteStored(row.storageKey);
+    // An upload now writes a thumbnail too; leaving it behind orphans a file
+    // on the media volume every time this suite runs.
+    if (row?.thumbKey) await deleteStored(row.thumbKey);
     await db.delete(mediaAssets).where(eq(mediaAssets.id, id));
   }
   await pool.end();
