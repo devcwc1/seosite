@@ -283,7 +283,7 @@ export function MediaLibrary({
                   className="focus-visible:ring-ring/50 block w-full text-left outline-none focus-visible:ring-[3px]"
                 >
                   <MediaThumb
-                    src={item.url}
+                    src={item.thumbUrl}
                     alt={item.alt ?? item.originalName ?? ""}
                     className="aspect-square w-full object-cover"
                   />

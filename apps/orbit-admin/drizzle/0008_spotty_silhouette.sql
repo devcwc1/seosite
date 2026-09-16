@@ -1,0 +1,1 @@
+ALTER TABLE "media_assets" ADD COLUMN "thumb_key" varchar(512);

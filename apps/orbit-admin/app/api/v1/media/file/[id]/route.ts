@@ -17,7 +17,7 @@ const UUID_RE =
  * (Eventual ORB-103: serve straight from the volume via Caddy.)
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
   const { id } = await params;
@@ -41,8 +41,15 @@ export async function GET(
     return problemFor(404, "No stored file for this asset.", { instance });
   }
 
+  // `?variant=thumb` asks for the grid-sized copy. Assets uploaded before
+  // thumbnails existed have none, and rather than 404 or backfill on read,
+  // the original is served — correct, just larger.
+  const wantsThumb =
+    new URL(request.url).searchParams.get("variant") === "thumb";
+  const key = wantsThumb && asset.thumbKey ? asset.thumbKey : asset.storageKey;
+
   try {
-    const data = await readStored(asset.storageKey);
+    const data = await readStored(key);
     return new NextResponse(new Uint8Array(data), {
       headers: {
         "Content-Type": asset.mimeType,

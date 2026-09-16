@@ -368,6 +368,12 @@ export const mediaAssets = pgTable(
     storageKey: varchar("storage_key", { length: 512 }),
     /** Set only for backfilled pre-existing external images (e.g. seed URLs). */
     externalUrl: varchar("external_url", { length: 2048 }),
+    /**
+     * Downscaled copy for grid cells. Null for assets uploaded before thumbs
+     * existed, and for external backfills — the file route falls back to the
+     * original, so nothing needs backfilling before this is useful.
+     */
+    thumbKey: varchar("thumb_key", { length: 512 }),
     /** Stored (re-encoded) format + mime — always webp for new uploads. */
     format: varchar("format", { length: 16 }).notNull(),
     mimeType: varchar("mime_type", { length: 128 }).notNull(),

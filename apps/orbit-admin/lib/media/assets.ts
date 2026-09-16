@@ -37,10 +37,23 @@ export function assetUrl(asset: Pick<MediaAsset, "id" | "externalUrl">): string 
   return asset.externalUrl ?? `/api/v1/media/file/${asset.id}`;
 }
 
+/**
+ * URL for the grid-sized copy. External backfills have no thumbnail of ours,
+ * and neither do assets uploaded before thumbnails existed — both fall back
+ * to the full-size URL rather than making every caller check.
+ */
+export function assetThumbUrl(
+  asset: Pick<MediaAsset, "id" | "externalUrl" | "thumbKey">,
+): string {
+  if (asset.externalUrl || !asset.thumbKey) return assetUrl(asset);
+  return `/api/v1/media/file/${asset.id}?variant=thumb`;
+}
+
 export function toAssetDTO(asset: MediaAsset, usageCount = 0): MediaAssetDTO {
   return {
     id: asset.id,
     url: assetUrl(asset),
+    thumbUrl: assetThumbUrl(asset),
     width: asset.width,
     height: asset.height,
     sizeBytes: asset.sizeBytes,

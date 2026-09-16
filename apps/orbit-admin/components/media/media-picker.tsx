@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { MediaThumb } from "@/components/media/media-thumb";
 import { cn } from "@/lib/utils";
 import type { MediaAssetDTO, MediaListDTO } from "@/lib/media/types";
 
@@ -234,11 +235,10 @@ export function MediaPicker({
                         isSelected && "ring-2 ring-primary",
                       )}
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={m.url}
+                      <MediaThumb
+                        src={m.thumbUrl}
                         alt={m.alt ?? m.originalName ?? ""}
-                        className="aspect-square w-full bg-muted object-cover"
+                        className="aspect-square w-full object-cover"
                       />
                       {isSelected ? (
                         <span className="absolute top-1 right-1 rounded-full bg-primary px-1.5 text-xs text-primary-foreground">

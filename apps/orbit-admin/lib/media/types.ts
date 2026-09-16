@@ -2,6 +2,11 @@
 export type MediaAssetDTO = {
   id: string;
   url: string;
+  /**
+   * Grid-sized copy. Falls back to the full-size URL for assets that have no
+   * thumbnail, so a caller can always just use it.
+   */
+  thumbUrl: string;
   width: number;
   height: number;
   sizeBytes: number;

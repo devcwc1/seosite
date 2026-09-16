@@ -30,3 +30,11 @@ export const ALLOWED_EXTENSIONS: Record<AllowedFormat, readonly string[]> = {
 export const OUTPUT_FORMAT = "webp";
 export const OUTPUT_MIME = "image/webp";
 export const WEBP_QUALITY = 82;
+
+/**
+ * Longest edge of the grid thumbnail. The library grid caps cells around
+ * 300px wide, so 400 covers a 2x display without paying for the original —
+ * an upload may legitimately be 8000px on a side.
+ */
+export const THUMB_MAX_EDGE = 400;
+export const THUMB_QUALITY = 70;

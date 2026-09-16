@@ -18,12 +18,19 @@ import {
   MAX_UPLOAD_BYTES,
   MIN_DIMENSION,
   OUTPUT_MIME,
+  THUMB_MAX_EDGE,
+  THUMB_QUALITY,
   WEBP_QUALITY,
   type AllowedFormat,
 } from "./constants";
 import { UploadError } from "./errors";
 import { sniffImageFormat } from "./sniff";
-import { buildStorageKey, deleteStored, writeAtomic } from "./storage";
+import {
+  buildStorageKey,
+  buildThumbKey,
+  deleteStored,
+  writeAtomic,
+} from "./storage";
 
 export type ProcessResult = { asset: MediaAsset; alreadyInLibrary: boolean };
 
@@ -160,17 +167,40 @@ export async function processUpload(
   const outWidth = outMeta.width ?? width;
   const outHeight = outMeta.height ?? height;
 
-  // 6. Content-addressed atomic write.
+  // 6. A downscaled copy for grid cells. Generated from the re-encoded
+  //    output, not the upload, so it inherits the same neutralisation.
+  //    A thumbnail is a convenience: if sharp cannot produce one the upload
+  //    still succeeds and the grid falls back to the original.
+  let thumb: Buffer | null = null;
+  try {
+    thumb = await sharp(output)
+      .resize({
+        width: THUMB_MAX_EDGE,
+        height: THUMB_MAX_EDGE,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .webp({ quality: THUMB_QUALITY })
+      .toBuffer();
+  } catch {
+    thumb = null;
+  }
+
+  // 7. Content-addressed atomic write.
   const storageKey = buildStorageKey(sha256);
   await writeAtomic(storageKey, output);
 
-  // 7. Persist. On a sha256 race, clean up our file and return the winner.
+  const thumbKey = thumb ? buildThumbKey(storageKey) : null;
+  if (thumb && thumbKey) await writeAtomic(thumbKey, thumb);
+
+  // 8. Persist. On a sha256 race, clean up our file and return the winner.
   try {
     const [asset] = await db
       .insert(mediaAssets)
       .values({
         sha256,
         storageKey,
+        thumbKey,
         format: "webp",
         mimeType: OUTPUT_MIME,
         width: outWidth,

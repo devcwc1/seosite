@@ -15,6 +15,8 @@ function asset(overrides: Partial<MediaAssetDTO> = {}): MediaAssetDTO {
   return {
     id: "11111111-1111-1111-1111-111111111111",
     url: "/api/v1/media/file/11111111-1111-1111-1111-111111111111",
+    thumbUrl:
+      "/api/v1/media/file/11111111-1111-1111-1111-111111111111?variant=thumb",
     width: 800,
     height: 600,
     sizeBytes: 2048,

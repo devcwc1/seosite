@@ -20,6 +20,11 @@ export function buildStorageKey(sha256: string): string {
   return `products/${a}/${b}/${randomUUID()}.webp`;
 }
 
+/** The thumbnail's key, derived from the original's so they stay together. */
+export function buildThumbKey(storageKey: string): string {
+  return storageKey.replace(/.webp$/, ".thumb.webp");
+}
+
 /** Reject any key that could escape the media root. */
 function resolveWithinRoot(storageKey: string): string {
   const root = mediaRoot();
