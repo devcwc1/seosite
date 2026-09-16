@@ -50,6 +50,23 @@ const LIVE = {
 } as const;
 
 /**
+ * Domains backed by real data that is computed rather than stored. There is
+ * no column to compare against, so no exhaustiveness test can guard these —
+ * the code that produces the value and this table have to agree by reading.
+ */
+const DERIVED = {
+  /** Whether any product references a media asset (ORB-505). */
+  mediaUsage: {
+    inUse: { tone: "info", label: "In use" },
+    unused: {
+      tone: "neutral",
+      label: "Unused",
+      description: "No product references this asset",
+    },
+  },
+} as const;
+
+/**
  * Domains whose feature has not been built yet — there is no column behind
  * any of these. They are declared now so the first screen to need one
  * inherits the mapping instead of inventing a colour, which is the failure
@@ -99,10 +116,11 @@ const FORWARD = {
   },
 } as const;
 
-export const STATUS_REGISTRY = { ...LIVE, ...FORWARD } as const satisfies Record<
-  string,
-  Record<string, StatusEntry>
->;
+export const STATUS_REGISTRY = {
+  ...LIVE,
+  ...DERIVED,
+  ...FORWARD,
+} as const satisfies Record<string, Record<string, StatusEntry>>;
 
 export type StatusDomain = keyof typeof STATUS_REGISTRY;
 export type StatusValue<D extends StatusDomain> = keyof (typeof STATUS_REGISTRY)[D];

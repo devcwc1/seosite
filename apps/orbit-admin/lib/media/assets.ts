@@ -19,11 +19,13 @@ import { db } from "@/lib/db";
 import {
   mediaAssets,
   productMedia,
+  users,
   type MediaAsset,
 } from "@/lib/db/schema";
 
 import { referencedAssetIds, usageCounts, usageForAsset } from "./usage";
 import type {
+  MediaAssetDetailDTO,
   MediaAssetDTO,
   MediaListDTO,
   MediaUsageFilter,
@@ -133,6 +135,41 @@ export async function listAssets(
     nextCursor:
       rows.length > limit ? (page.at(-1)?.createdAt.toISOString() ?? null) : null,
     total,
+  };
+}
+
+/**
+ * One asset with everything the detail drawer shows, including where it is
+ * used. Soft-deleted assets resolve to null: the drawer is part of the
+ * library, and the library does not have them.
+ */
+export async function getAssetDetail(
+  id: string,
+): Promise<MediaAssetDetailDTO | null> {
+  const [row] = await db
+    .select()
+    .from(mediaAssets)
+    .where(and(eq(mediaAssets.id, id), isNull(mediaAssets.deletedAt)))
+    .limit(1);
+  if (!row) return null;
+
+  const [usage, uploader] = await Promise.all([
+    usageForAsset(id),
+    row.uploadedBy
+      ? db
+          .select({ email: users.email })
+          .from(users)
+          .where(eq(users.id, row.uploadedBy))
+          .limit(1)
+      : Promise.resolve([]),
+  ]);
+
+  return {
+    ...toAssetDTO(row, usage.length),
+    originalMimeType: row.originalMimeType,
+    // Null when the uploader's account is gone — the asset outlives them.
+    uploadedByEmail: uploader[0]?.email ?? null,
+    usage,
   };
 }
 

@@ -27,7 +27,13 @@ export type ProductFormPayload = {
   stockQuantity: string;
   images: ProductImagePayload[];
   categories: ProductCategoryPayload[];
-  meta: { title: string; description: string; keywords: string };
+  meta: {
+    title: string;
+    description: string;
+    keywords: string;
+    /** Media asset id, or "" for none. */
+    ogImageAssetId: string;
+  };
   reviews: ProductReviewPayload[];
 };
 
@@ -85,6 +91,11 @@ export const productInputSchema = z.object({
     title: z.string().trim().max(255),
     description: z.string().trim().max(1000),
     keywords: z.string().trim().max(500),
+    // Empty means "no OG image"; anything else must be a real asset id, so a
+    // malformed value is rejected rather than stored and rendered later.
+    ogImageAssetId: z
+      .union([z.literal(""), z.string().uuid("Invalid image reference")])
+      .default(""),
   }),
   reviews: z.array(reviewSchema),
 });

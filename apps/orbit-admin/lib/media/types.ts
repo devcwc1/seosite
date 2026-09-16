@@ -26,6 +26,14 @@ export type MediaUsageDTO = {
   kind: "gallery" | "ogImage";
 };
 
+/** One asset plus everything the detail drawer shows. */
+export type MediaAssetDetailDTO = MediaAssetDTO & {
+  /** What was uploaded, before the re-encode to webp. */
+  originalMimeType: string | null;
+  uploadedByEmail: string | null;
+  usage: MediaUsageDTO[];
+};
+
 /** A page of the library. */
 export type MediaListDTO = {
   items: MediaAssetDTO[];

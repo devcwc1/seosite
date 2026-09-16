@@ -4,13 +4,34 @@ import { getCurrentSession } from "@/lib/auth/session";
 import { canDeleteMedia, canEditMedia } from "@/lib/media/policy";
 import { problemFor } from "@/lib/http/problem";
 import { createLogger } from "@/lib/logger";
-import { deleteAsset, updateAsset } from "@/lib/media/assets";
+import { deleteAsset, getAssetDetail, updateAsset } from "@/lib/media/assets";
 
 export const runtime = "nodejs";
 
 const log = createLogger({ route: "api/v1/media/[id]" });
 
 const MAX_FIELD = 512;
+
+/** One asset with its usage — what the detail drawer reads. */
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<NextResponse> {
+  const session = await getCurrentSession();
+  const { id } = await params;
+  const instance = `/api/v1/media/${id}`;
+
+  if (!session) return problemFor(401, "Sign in required.", { instance });
+
+  try {
+    const asset = await getAssetDetail(id);
+    if (!asset) return problemFor(404, "Not found.", { instance });
+    return NextResponse.json(asset);
+  } catch (error) {
+    log.error({ err: error, id, event: "media.detail_failed" }, "Detail failed");
+    return problemFor(500, "Failed to load media.", { instance });
+  }
+}
 
 function normalizeField(
   value: unknown,

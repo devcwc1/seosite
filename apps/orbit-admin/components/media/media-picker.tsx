@@ -17,16 +17,31 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import type { MediaAssetDTO } from "@/lib/media/types";
+import type { MediaAssetDTO, MediaListDTO } from "@/lib/media/types";
 
 export type PickedMedia = { assetId: string; url: string; alt: string };
+
+export type MediaPickerProps = {
+  /** Receives the selection. One item in "single" mode, any number otherwise. */
+  onAdd: (items: PickedMedia[]) => void;
+  /**
+   * "single" is ORB-505's pick-mode for a field that holds one asset, such as
+   * the OG image: choosing replaces rather than accumulates, and the dialog
+   * closes on the click instead of asking for a second confirmation.
+   */
+  mode?: "multiple" | "single";
+  triggerLabel?: string;
+  title?: string;
+};
 
 /** Pick existing assets or upload new ones (drag-drop + progress). */
 export function MediaPicker({
   onAdd,
-}: {
-  onAdd: (items: PickedMedia[]) => void;
-}) {
+  mode = "multiple",
+  triggerLabel,
+  title = "Media library",
+}: MediaPickerProps) {
+  const single = mode === "single";
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<MediaAssetDTO[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -44,7 +59,8 @@ export function MediaPicker({
     try {
       const res = await fetch("/api/v1/media");
       if (!res.ok) throw new Error("Failed to load media");
-      setItems((await res.json()) as MediaAssetDTO[]);
+      const page = (await res.json()) as MediaListDTO;
+      setItems(page.items);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load media");
     } finally {
@@ -60,6 +76,18 @@ export function MediaPicker({
   }, [open, load]);
 
   function toggle(id: string) {
+    if (single) {
+      // One asset means one click: selecting is the decision, so it is also
+      // the confirmation. A second "Add selected" step would only be a way
+      // to get the choice wrong twice.
+      const chosen = items.find((m) => m.id === id);
+      if (chosen) {
+        onAdd([{ assetId: chosen.id, url: chosen.url, alt: chosen.alt ?? "" }]);
+        setOpen(false);
+      }
+      return;
+    }
+
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -117,13 +145,13 @@ export function MediaPicker({
         onClick={() => setOpen(true)}
       >
         <ImagePlus className="size-4" aria-hidden />
-        Add images
+        {triggerLabel ?? (single ? "Choose image" : "Add images")}
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Media library</DialogTitle>
+            <DialogTitle>{title}</DialogTitle>
           </DialogHeader>
 
           <div className="flex items-center gap-3">
@@ -132,6 +160,7 @@ export function MediaPicker({
               type="file"
               accept={ACCEPTED_IMAGE_TYPES}
               multiple
+              aria-label="Upload images"
               className="hidden"
               onChange={(e) => onFiles(e.target.files)}
             />
@@ -145,9 +174,15 @@ export function MediaPicker({
               <Upload className="size-4" aria-hidden />
               {uploading ? `Uploading ${progress}%` : "Upload new"}
             </Button>
-            <span className="text-sm text-muted-foreground">
-              {selected.size} selected
-            </span>
+            {single ? (
+              <span className="text-sm text-muted-foreground">
+                Select an image
+              </span>
+            ) : (
+              <span className="text-sm text-muted-foreground">
+                {selected.size} selected
+              </span>
+            )}
           </div>
 
           {uploading ? (
@@ -219,13 +254,15 @@ export function MediaPicker({
 
           <DialogFooter>
             <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
-            <Button
-              type="button"
-              onClick={confirmAdd}
-              disabled={selected.size === 0}
-            >
-              Add selected
-            </Button>
+            {single ? null : (
+              <Button
+                type="button"
+                onClick={confirmAdd}
+                disabled={selected.size === 0}
+              >
+                Add selected
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -11,9 +11,10 @@ import {
   type ProductCategorySelection,
 } from "@/lib/categories/mutations";
 import { sanitizeRichText } from "@/lib/content/sanitize";
-import { getProductGallery, setProductGallery } from "@/lib/media/assets";
+import { assetUrl, getProductGallery, setProductGallery } from "@/lib/media/assets";
 import { db } from "@/lib/db";
 import {
+  mediaAssets,
   productContent,
   productContentRevisions,
   products,
@@ -45,6 +46,8 @@ export type ProductEditData = {
   images: { assetId: string; url: string; alt: string }[];
   categories: ProductCategorySelection[];
   meta: ProductMeta;
+  /** Served URL for meta.ogImageAssetId, so the form can show the choice. */
+  ogImageUrl: string;
   reviews: ProductReview[];
 };
 
@@ -62,6 +65,11 @@ function toMeta(input: ProductParsed): ProductMeta {
   if (input.meta.title) meta.title = input.meta.title;
   if (input.meta.description) meta.description = input.meta.description;
   if (input.meta.keywords) meta.keywords = input.meta.keywords;
+  // Absent rather than empty: the key only exists when an image is chosen,
+  // so the usage query can match on its presence.
+  if (input.meta.ogImageAssetId) {
+    meta.ogImageAssetId = input.meta.ogImageAssetId;
+  }
   return meta;
 }
 
@@ -366,6 +374,19 @@ export async function getProductForEdit(
     getProductCategories(id),
   ]);
 
+  // The OG image is stored as an id. Resolving it here means the form shows
+  // the picked image rather than an empty box that looks like nothing is set.
+  const ogImageAssetId = content?.meta?.ogImageAssetId;
+  let ogImageUrl = "";
+  if (ogImageAssetId) {
+    const [asset] = await db
+      .select({ id: mediaAssets.id, externalUrl: mediaAssets.externalUrl })
+      .from(mediaAssets)
+      .where(eq(mediaAssets.id, ogImageAssetId))
+      .limit(1);
+    if (asset) ogImageUrl = assetUrl(asset);
+  }
+
   return {
     id: product.id,
     title: content?.title ?? "",
@@ -385,6 +406,7 @@ export async function getProductForEdit(
     })),
     categories: categorySelections,
     meta: content?.meta ?? {},
+    ogImageUrl,
     reviews: content?.reviews ?? [],
   };
 }
