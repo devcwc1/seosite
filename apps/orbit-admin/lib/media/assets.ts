@@ -1,6 +1,18 @@
 import "server-only";
 
-import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  lt,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import { recordAudit } from "@/lib/audit";
 import { db } from "@/lib/db";
@@ -10,15 +22,20 @@ import {
   type MediaAsset,
 } from "@/lib/db/schema";
 
-import { deleteStored } from "./storage";
-import type { MediaAssetDTO, ProductMediaItemDTO } from "./types";
+import { referencedAssetIds, usageCounts, usageForAsset } from "./usage";
+import type {
+  MediaAssetDTO,
+  MediaListDTO,
+  MediaUsageFilter,
+  ProductMediaItemDTO,
+} from "./types";
 
 /** Served URL for an asset — external URL for backfilled images, else our route. */
 export function assetUrl(asset: Pick<MediaAsset, "id" | "externalUrl">): string {
   return asset.externalUrl ?? `/api/v1/media/file/${asset.id}`;
 }
 
-export function toAssetDTO(asset: MediaAsset): MediaAssetDTO {
+export function toAssetDTO(asset: MediaAsset, usageCount = 0): MediaAssetDTO {
   return {
     id: asset.id,
     url: assetUrl(asset),
@@ -31,30 +48,92 @@ export function toAssetDTO(asset: MediaAsset): MediaAssetDTO {
     title: asset.title,
     alt: asset.alt,
     createdAt: asset.createdAt.toISOString(),
+    usageCount,
   };
 }
 
-export async function listAssets(query?: string): Promise<MediaAssetDTO[]> {
-  const q = query?.trim();
-  const rows = q
-    ? await db
-        .select()
-        .from(mediaAssets)
-        .where(
-          or(
-            ilike(mediaAssets.originalName, `%${q}%`),
-            ilike(mediaAssets.title, `%${q}%`),
-            ilike(mediaAssets.alt, `%${q}%`),
-          ),
-        )
-        .orderBy(desc(mediaAssets.createdAt))
-        .limit(300)
-    : await db
-        .select()
-        .from(mediaAssets)
-        .orderBy(desc(mediaAssets.createdAt))
-        .limit(300);
-  return rows.map(toAssetDTO);
+export type ListAssetsOptions = {
+  query?: string;
+  usage?: MediaUsageFilter;
+  /** Page size. Capped so a hand-written request cannot ask for everything. */
+  limit?: number;
+  /** `createdAt` ISO string of the last item on the previous page. */
+  cursor?: string;
+};
+
+const DEFAULT_LIMIT = 48;
+const MAX_LIMIT = 100;
+
+/**
+ * A page of the library — ORB-505.
+ *
+ * Keyset paging on `createdAt` rather than OFFSET: the library is sorted
+ * newest first and gets uploaded to while someone is paging through it, and
+ * an offset would silently skip or repeat a row every time that happens.
+ */
+export async function listAssets(
+  options: ListAssetsOptions = {},
+): Promise<MediaListDTO> {
+  const q = options.query?.trim();
+  const usage = options.usage ?? "all";
+  const limit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
+
+  const filters = [
+    // Soft-deleted assets are gone as far as the library is concerned.
+    isNull(mediaAssets.deletedAt),
+  ];
+
+  if (q) {
+    const like = `%${q}%`;
+    filters.push(
+      or(
+        ilike(mediaAssets.originalName, like),
+        ilike(mediaAssets.title, like),
+        ilike(mediaAssets.alt, like),
+      )!,
+    );
+  }
+
+  if (usage !== "all") {
+    const referenced = [...(await referencedAssetIds())];
+    if (usage === "used") {
+      // Nothing is referenced, so nothing can match.
+      if (referenced.length === 0) return { items: [], nextCursor: null, total: 0 };
+      filters.push(inArray(mediaAssets.id, referenced));
+    } else if (referenced.length > 0) {
+      filters.push(notInArray(mediaAssets.id, referenced));
+    }
+  }
+
+  const where = and(...filters);
+
+  const totals = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(mediaAssets)
+    .where(where);
+  const total = totals[0]?.total ?? 0;
+
+  // One extra row tells us whether another page exists without a second query.
+  const rows = await db
+    .select()
+    .from(mediaAssets)
+    .where(
+      options.cursor
+        ? and(where, lt(mediaAssets.createdAt, new Date(options.cursor)))
+        : where,
+    )
+    .orderBy(desc(mediaAssets.createdAt))
+    .limit(limit + 1);
+
+  const page = rows.slice(0, limit);
+  const counts = await usageCounts(page.map((row) => row.id));
+
+  return {
+    items: page.map((row) => toAssetDTO(row, counts.get(row.id) ?? 0)),
+    nextCursor:
+      rows.length > limit ? (page.at(-1)?.createdAt.toISOString() ?? null) : null,
+    total,
+  };
 }
 
 export type UpdateAssetInput = {
@@ -116,24 +195,29 @@ export async function deleteAsset(
   id: string,
   actorId: string | null,
 ): Promise<DeleteAssetResult> {
-  const [link] = await db
-    .select({ id: productMedia.id })
-    .from(productMedia)
-    .where(eq(productMedia.mediaAssetId, id))
-    .limit(1);
-  if (link) {
+  // Galleries and OG references both count. Checking only product_media
+  // would let an asset be deleted while a product page still points at it.
+  const usage = await usageForAsset(id);
+  if (usage.length > 0) {
     return { ok: false, error: "This image is used by one or more products." };
   }
 
   const [row] = await db
     .select()
     .from(mediaAssets)
-    .where(eq(mediaAssets.id, id))
+    .where(and(eq(mediaAssets.id, id), isNull(mediaAssets.deletedAt)))
     .limit(1);
   if (!row) return { ok: false, error: "Not found." };
 
-  await db.delete(mediaAssets).where(eq(mediaAssets.id, id));
-  if (row.storageKey) await deleteStored(row.storageKey);
+  // Soft delete: the row and the file stay. Dedupe is by sha256, so a hard
+  // delete would leave a re-upload of the same bytes colliding with nothing,
+  // while the audit trail still referenced an id that no longer resolved.
+  // The stored file is kept deliberately — reclaiming it is a separate,
+  // deliberate sweep, not a side effect of one person clicking delete.
+  await db
+    .update(mediaAssets)
+    .set({ deletedAt: new Date() })
+    .where(eq(mediaAssets.id, id));
 
   await recordAudit({
     actorId,

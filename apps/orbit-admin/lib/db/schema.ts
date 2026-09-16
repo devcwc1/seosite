@@ -41,6 +41,12 @@ export type ProductMeta = {
   title?: string;
   description?: string;
   keywords?: string;
+  /**
+   * Open Graph image, chosen from the media library. Stored as an asset id
+   * rather than a URL so the image stays a library asset — counted in its
+   * usage, and protected by the same delete rules as a gallery image.
+   */
+  ogImageAssetId?: string;
 };
 
 /** A single customer review authored/managed in the admin. */
@@ -375,6 +381,15 @@ export const mediaAssets = pgTable(
     title: varchar("title", { length: 512 }),
     /** Default alt text for the asset (editable). */
     alt: varchar("alt", { length: 512 }),
+    /**
+     * Soft delete. The row and its file stay; the library stops listing it.
+     *
+     * Assets are shared, so a delete is never local to the person doing it —
+     * and because dedupe is by sha256, re-uploading the same bytes would
+     * otherwise collide with a row nobody can see. Keeping the row lets that
+     * upload restore it instead of failing on a ghost.
+     */
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     uploadedBy: uuid("uploaded_by").references(() => users.id, {
       onDelete: "set null",
     }),

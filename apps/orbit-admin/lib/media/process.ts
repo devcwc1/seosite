@@ -88,7 +88,21 @@ export async function processUpload(
   // 3. Dedupe on the original bytes.
   const sha256 = createHash("sha256").update(buffer).digest("hex");
   const existing = await findBySha(sha256);
-  if (existing) return { asset: existing, alreadyInLibrary: true };
+  if (existing) {
+    // Uploading bytes that match a soft-deleted asset restores it. Without
+    // this the uploader is told the image is already in the library and then
+    // cannot find it anywhere — dedupe would have matched a row the library
+    // hides, and there would be no way to get the image back.
+    if (existing.deletedAt) {
+      const [restored] = await db
+        .update(mediaAssets)
+        .set({ deletedAt: null })
+        .where(eq(mediaAssets.id, existing.id))
+        .returning();
+      return { asset: restored ?? existing, alreadyInLibrary: false };
+    }
+    return { asset: existing, alreadyInLibrary: true };
+  }
 
   // 4. Decode with sharp (real parse) + decompression-bomb guard.
   let width: number;
