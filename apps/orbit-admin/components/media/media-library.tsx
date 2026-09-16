@@ -15,9 +15,17 @@ import {
 
 export function MediaLibrary({
   canWrite,
+  canDelete,
 }: {
   /** Viewers browse and search the library, but cannot change it. */
   canWrite: boolean;
+  /**
+   * Deleting is narrower than writing — admins only. Passed in rather than
+   * derived here: the role lives in the session, which is server-side, and
+   * this is a client component. Hiding the control is a courtesy; the route
+   * refuses the request regardless (lib/media/policy.ts).
+   */
+  canDelete: boolean;
 }) {
   const [items, setItems] = useState<MediaAssetDTO[]>([]);
   const [query, setQuery] = useState("");
@@ -195,30 +203,30 @@ export function MediaLibrary({
                     {item.width}×{item.height} · {formatBytes(item.sizeBytes)}
                   </p>
                 </div>
-                <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100">
+                <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
                   {canWrite ? (
-                    <>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label="Edit"
-                        onClick={() => setEditing(item)}
-                        className="bg-background/80"
-                      >
-                        <Pencil className="size-4" aria-hidden />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label="Delete"
-                        onClick={() => onDelete(item)}
-                        className="bg-background/80"
-                      >
-                        <Trash2 className="size-4" aria-hidden />
-                      </Button>
-                    </>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={`Edit ${item.title ?? item.originalName ?? "image"}`}
+                      onClick={() => setEditing(item)}
+                      className="bg-background/80"
+                    >
+                      <Pencil className="size-4" aria-hidden />
+                    </Button>
+                  ) : null}
+                  {canDelete ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={`Delete ${item.title ?? item.originalName ?? "image"}`}
+                      onClick={() => onDelete(item)}
+                      className="bg-background/80"
+                    >
+                      <Trash2 className="size-4" aria-hidden />
+                    </Button>
                   ) : null}
                 </div>
               </div>

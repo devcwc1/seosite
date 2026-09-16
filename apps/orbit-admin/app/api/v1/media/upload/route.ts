@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getCurrentSession, isWriter } from "@/lib/auth/session";
+import { getCurrentSession } from "@/lib/auth/session";
+import { canUploadMedia } from "@/lib/media/policy";
 import { problemFor } from "@/lib/http/problem";
 import { createLogger } from "@/lib/logger";
 import { linkAssetToProduct, toAssetDTO } from "@/lib/media/assets";
@@ -24,7 +25,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   if (!session) {
     return problemFor(401, "Sign in to upload media.", { instance: INSTANCE });
   }
-  if (!isWriter(session.user)) {
+  if (!canUploadMedia(session.user)) {
     return problemFor(403, "Viewers cannot upload media.", {
       instance: INSTANCE,
     });

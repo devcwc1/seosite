@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { getCurrentSession, isWriter } from "@/lib/auth/session";
+import { getCurrentSession } from "@/lib/auth/session";
+import { canDeleteMedia, canEditMedia } from "@/lib/media/policy";
 import { problemFor } from "@/lib/http/problem";
 import { createLogger } from "@/lib/logger";
 import { deleteAsset, updateAsset } from "@/lib/media/assets";
@@ -39,7 +40,7 @@ export async function PATCH(
   const instance = `/api/v1/media/${id}`;
 
   if (!session) return problemFor(401, "Sign in required.", { instance });
-  if (!isWriter(session.user)) {
+  if (!canEditMedia(session.user)) {
     return problemFor(403, "Viewers cannot edit media.", { instance });
   }
 
@@ -88,8 +89,8 @@ export async function DELETE(
   const instance = `/api/v1/media/${id}`;
 
   if (!session) return problemFor(401, "Sign in required.", { instance });
-  if (!isWriter(session.user)) {
-    return problemFor(403, "Viewers cannot delete media.", { instance });
+  if (!canDeleteMedia(session.user)) {
+    return problemFor(403, "Only administrators can delete media.", { instance });
   }
 
   try {
