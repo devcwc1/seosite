@@ -27,6 +27,18 @@ HOST_MEDIA="$REPO/apps/orbit-admin/media"
 
 say() { printf '  %s\n' "$*"; }
 
+# -- preflight ---------------------------------------------------------------
+# The env files travel with the bundle, so if docker compose cannot interpolate
+# them here it will not be able to on the target machine either — and there it
+# fails at "Starting Postgres", with nothing already running to hide it.
+# Compose checks every service's variables even when starting only one.
+if ! (cd "$REPO" && docker compose config --quiet) 2>/tmp/orbit-compose-check.err; then
+  echo "  !! docker compose rejects the current .env — not exporting a bundle" >&2
+  echo "     that would fail to start on the other machine:" >&2
+  sed 's/^/     /' /tmp/orbit-compose-check.err >&2
+  exit 1
+fi
+
 mkdir -p "$OUT/secrets"
 echo "Exporting Orbit state -> $OUT"
 

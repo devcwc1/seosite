@@ -42,6 +42,16 @@ echo "      Correct if this machine reaches Postgres differently."
 step "Installing dependencies (npm ci)"
 ( cd "$TARGET" && npm ci )
 
+step "Checking the compose environment"
+if ! (cd "$TARGET" && docker compose config --quiet); then
+  echo "   !! docker compose cannot read $TARGET/.env."
+  echo "      Most often a variable it requires is missing — compare .env with"
+  echo "      .env.template. ORBIT_WRITE_TOKEN must match the one in"
+  echo "      apps/orbit-admin/.env and apps/storefront/.env."
+  exit 1
+fi
+echo "   ok"
+
 step "Starting Postgres"
 ( cd "$TARGET" && docker compose up -d postgres )
 echo "   waiting for health..."
