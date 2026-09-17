@@ -14,7 +14,15 @@ import {
 } from "@/components/ui/sheet";
 import { StatusChip } from "@/components/ui/status-chip";
 import { formatBytes } from "@/lib/format";
-import type { MediaAssetDetailDTO } from "@/lib/media/types";
+import type { MediaAssetDetailDTO, MediaUsageDTO } from "@/lib/media/types";
+
+const USAGE_LABEL: Record<MediaUsageDTO["kind"], string> = {
+  gallery: "Gallery",
+  ogImage: "Share image",
+  categoryOgImage: "Category share image",
+  siteDefaultOgImage: "Default share image",
+  siteLogo: "Site logo",
+};
 
 /**
  * The detail drawer — ORB-505, doc 15 screen 31.
@@ -138,23 +146,20 @@ export function MediaDetailDrawer({
 
                 {asset.usage.length === 0 ? (
                   <p className="text-muted-foreground text-body">
-                    No product uses this image. It can be deleted safely.
+                    Nothing uses this image. It can be deleted safely.
                   </p>
                 ) : (
                   <ul className="flex flex-col gap-1">
                     {asset.usage.map((use) => (
                       <li
-                        key={`${use.productId}-${use.kind}`}
+                        key={`${use.targetId}-${use.kind}`}
                         className="flex items-center justify-between gap-2"
                       >
-                        <Link
-                          href={`/products/${use.productId}`}
-                          className="text-body hover:underline"
-                        >
-                          {use.productTitle}
+                        <Link href={use.href} className="text-body hover:underline">
+                          {use.title}
                         </Link>
                         <span className="text-caption text-muted-foreground shrink-0">
-                          {use.kind === "gallery" ? "Gallery" : "OG image"}
+                          {USAGE_LABEL[use.kind]}
                         </span>
                       </li>
                     ))}

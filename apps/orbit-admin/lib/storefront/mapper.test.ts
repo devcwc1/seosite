@@ -16,6 +16,9 @@ function row(overrides: Partial<StorefrontProductRow> = {}): StorefrontProductRo
     description: "Dishwasher safe.",
     images: [{ url: "https://cdn.test/a.jpg", alt: "Front", position: 1 }],
     categories: [{ slug: "drinkware", name: "Drinkware", isPrimary: true }],
+    meta: {},
+    ogImageUrl: null,
+    updatedAt: new Date("2026-09-17T10:00:00.000Z"),
     ...overrides,
   };
 }
@@ -34,6 +37,38 @@ describe("toStorefrontProduct", () => {
       inStock: true,
       images: [{ url: "https://cdn.test/a.jpg", alt: "Front", position: 1 }],
       categories: [{ slug: "drinkware", name: "Drinkware", isPrimary: true }],
+      seo: {
+        title: null,
+        description: null,
+        keywords: null,
+        ogImageUrl: null,
+        noindex: false,
+        canonicalUrl: null,
+      },
+      updatedAt: "2026-09-17T10:00:00.000Z",
+    });
+  });
+
+  it("passes the editor's SEO through as set, without inventing fallbacks", () => {
+    const dto = toStorefrontProduct(
+      row({
+        meta: {
+          title: "Best mug",
+          description: "Holds coffee.",
+          noindex: true,
+          canonicalUrl: "https://example.com/mug",
+        },
+        ogImageUrl: "/api/v1/media/file/abc",
+      }),
+    );
+
+    expect(dto.seo).toEqual({
+      title: "Best mug",
+      description: "Holds coffee.",
+      keywords: null,
+      ogImageUrl: "/api/v1/media/file/abc",
+      noindex: true,
+      canonicalUrl: "https://example.com/mug",
     });
   });
 

@@ -18,7 +18,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { MediaPicker, type PickedMedia } from "@/components/media/media-picker";
-import { MediaThumb } from "@/components/media/media-thumb";
+import {
+  SeoMetaFields,
+  seoMetaFromStored,
+  seoMetaPayload,
+  type SeoMetaValue,
+} from "@/components/seo/seo-meta-fields";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -85,6 +90,8 @@ export type ProductFormInitial = {
     description?: string;
     keywords?: string;
     ogImageAssetId?: string;
+    noindex?: boolean;
+    canonicalUrl?: string;
   };
   /** Served URL for meta.ogImageAssetId, resolved by the loader. */
   ogImageUrl?: string;
@@ -134,12 +141,11 @@ export function ProductForm({
     currency: initial?.currency ?? "EUR",
     inStock: initial?.inStock ?? true,
     stockQuantity: initial ? String(initial.stockQuantity) : "0",
-    metaTitle: initial?.meta.title ?? "",
-    metaDescription: initial?.meta.description ?? "",
-    metaKeywords: initial?.meta.keywords ?? "",
-    ogImageAssetId: initial?.meta.ogImageAssetId ?? "",
-    ogImageUrl: initial?.ogImageUrl ?? "",
   });
+
+  const [seo, setSeo] = useState<SeoMetaValue>(() =>
+    seoMetaFromStored(initial?.meta, initial?.ogImageUrl),
+  );
 
   const [images, setImages] = useState<ImageDraft[]>(
     initial?.images.map((image) => ({
@@ -248,12 +254,7 @@ export function ProductForm({
         alt: image.alt,
       })),
       categories,
-      meta: {
-        title: values.metaTitle,
-        description: values.metaDescription,
-        keywords: values.metaKeywords,
-        ogImageAssetId: values.ogImageAssetId,
-      },
+      meta: seoMetaPayload(seo),
       reviews: reviews.map((r) => ({
         id: r.id,
         author: r.author,
@@ -572,101 +573,22 @@ export function ProductForm({
       {/* -------------------------------------------------- Meta details */}
       <Card>
         <CardHeader>
-          <CardTitle>Meta details</CardTitle>
-          <CardDescription>Search engine / SEO metadata.</CardDescription>
+          <CardTitle>Search &amp; social</CardTitle>
+          <CardDescription>
+            How this product appears in search results and when it is shared.
+            Leave fields blank to use the product&apos;s own name and summary.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4">
-          <div className="grid gap-2">
-            <Label htmlFor="metaTitle">Meta title</Label>
-            <Input
-              id="metaTitle"
-              value={values.metaTitle}
-              onChange={(e) => set("metaTitle", e.target.value)}
-            />
-            <FieldError message={errors["meta.title"]} />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="metaDescription">Meta description</Label>
-            <Textarea
-              id="metaDescription"
-              rows={3}
-              value={values.metaDescription}
-              onChange={(e) => set("metaDescription", e.target.value)}
-            />
-            <FieldError message={errors["meta.description"]} />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="metaKeywords">Meta keywords</Label>
-            <Input
-              id="metaKeywords"
-              value={values.metaKeywords}
-              onChange={(e) => set("metaKeywords", e.target.value)}
-              placeholder="comma, separated, keywords"
-            />
-            <FieldError message={errors["meta.keywords"]} />
-          </div>
-
-          {/*
-            ORB-505 pick-mode. The asset id is what is stored, not a URL, so
-            the image stays a library asset: it counts toward usage, and the
-            library will refuse to delete it while this product points at it.
-          */}
-          <div className="grid gap-2">
-            <Label>Social share image</Label>
-            <p className="text-muted-foreground text-caption">
-              Shown when the product is shared on social media. Chosen from the
-              media library.
-            </p>
-
-            {values.ogImageAssetId ? (
-              <div className="flex items-start gap-3">
-                <MediaThumb
-                  src={values.ogImageUrl}
-                  alt=""
-                  className="h-20 w-32 rounded-md border object-cover"
-                />
-                <div className="flex flex-col gap-2">
-                  <MediaPicker
-                    mode="single"
-                    triggerLabel="Replace image"
-                    title="Choose a social share image"
-                    onAdd={(picked) => {
-                      const chosen = picked[0];
-                      if (!chosen) return;
-                      set("ogImageAssetId", chosen.assetId);
-                      set("ogImageUrl", chosen.url);
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      set("ogImageAssetId", "");
-                      set("ogImageUrl", "");
-                    }}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <MediaPicker
-                  mode="single"
-                  triggerLabel="Choose image"
-                  title="Choose a social share image"
-                  onAdd={(picked) => {
-                    const chosen = picked[0];
-                    if (!chosen) return;
-                    set("ogImageAssetId", chosen.assetId);
-                    set("ogImageUrl", chosen.url);
-                  }}
-                />
-              </div>
-            )}
-            <FieldError message={errors["meta.ogImageAssetId"]} />
-          </div>
+        <CardContent>
+          <SeoMetaFields
+            idPrefix="product-seo"
+            value={seo}
+            onChange={(patch) => setSeo((prev) => ({ ...prev, ...patch }))}
+            errors={errors}
+            path={`/products/${values.slug || "…"}`}
+            fallbackTitle={values.title}
+            fallbackDescription={values.shortInfo}
+          />
         </CardContent>
       </Card>
 

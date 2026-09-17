@@ -20,6 +20,25 @@ export type StorefrontProductCategory = {
   isPrimary: boolean;
 };
 
+/**
+ * A page's search and social settings, as an editor set them. Every field is
+ * the editor's own value or null — fallbacks (the product name, the site
+ * default image) are the consumer's decision, not baked in here, so a
+ * storefront can tell "set" from "inherited".
+ */
+export type StorefrontSeo = {
+  /** Editor-written title. Used as the whole title, not put in the template. */
+  title: string | null;
+  description: string | null;
+  keywords: string | null;
+  /** Share image, resolved to an origin the browser (and crawlers) can reach. */
+  ogImageUrl: string | null;
+  /** Ask search engines not to index this page. */
+  noindex: boolean;
+  /** Set only when the content canonically lives at another URL. */
+  canonicalUrl: string | null;
+};
+
 /** A published product as seen by the public storefront. */
 export type StorefrontProduct = {
   id: string;
@@ -33,6 +52,9 @@ export type StorefrontProduct = {
   inStock: boolean;
   images: StorefrontImage[];
   categories: StorefrontProductCategory[];
+  seo: StorefrontSeo;
+  /** ISO timestamp of the last edit, for sitemap `lastmod`. */
+  updatedAt: string;
 };
 
 export type OrbitClientOptions = {
@@ -74,9 +96,32 @@ export type StorefrontCategory = {
   slug: string;
   name: string;
   description: string | null;
-  meta: { title?: string; description?: string; keywords?: string };
+  seo: StorefrontSeo;
   position: number;
   productCount: number;
+  /** ISO timestamp of the last edit, for sitemap `lastmod`. */
+  updatedAt: string;
+};
+
+/**
+ * Site-wide search and social settings, controlled from the Orbit admin.
+ * Pages use these wherever they have nothing more specific of their own.
+ */
+export type StorefrontSite = {
+  siteName: string;
+  /** Contains `%s`, replaced with a page's own title. */
+  titleTemplate: string;
+  /** Public origin, no trailing slash. Null when the admin has not set one. */
+  siteUrl: string | null;
+  defaultDescription: string | null;
+  defaultOgImageUrl: string | null;
+  logoUrl: string | null;
+  /** Includes the @. */
+  twitterHandle: string | null;
+  /** False means every page is noindex and robots.txt disallows everything. */
+  allowIndexing: boolean;
+  /** Extra robots.txt lines, verbatim. */
+  robotsExtra: string;
 };
 
 /** What a storefront sends to place an order. Deliberately no prices. */
@@ -109,6 +154,8 @@ export interface OrbitClient {
   getProduct(slug: string): Promise<StorefrontProduct | null>;
   listCategories(): Promise<StorefrontCategory[]>;
   getCategory(slug: string): Promise<StorefrontCategory | null>;
+  /** Site-wide search and social settings. */
+  getSite(): Promise<StorefrontSite>;
   /**
    * Place an order. Server-side only: it presents the write token, which must
    * never reach a browser.
@@ -145,6 +192,29 @@ const DEFAULT_BASE_URL = "http://localhost:3000";
 const DEFAULT_REVALIDATE = 60;
 
 /**
+ * Resolve one Orbit asset path against the asset origin. Root-relative paths
+ * only; absolute URLs (external backfills) are already reachable.
+ */
+function resolveAssetUrl(url: string | null, assetBaseUrl: string): string | null {
+  if (url === null || assetBaseUrl === "" || !url.startsWith("/")) return url;
+  return `${assetBaseUrl}${url}`;
+}
+
+/**
+ * Share images must be absolute to be of any use: a social network fetching
+ * a card cannot resolve a path against the admin's private address.
+ */
+function withResolvedSeo<T extends { seo: StorefrontSeo }>(
+  item: T,
+  assetBaseUrl: string,
+): T {
+  return {
+    ...item,
+    seo: { ...item.seo, ogImageUrl: resolveAssetUrl(item.seo.ogImageUrl, assetBaseUrl) },
+  };
+}
+
+/**
  * Point a product's images at an origin the browser can actually reach. Only
  * root-relative paths are rewritten; absolute URLs (images backfilled from an
  * external source) are already resolvable and are left untouched.
@@ -155,14 +225,17 @@ function withResolvedImages(
 ): StorefrontProduct {
   if (assetBaseUrl === "") return product;
 
-  return {
-    ...product,
-    images: product.images.map((image) =>
-      image.url.startsWith("/")
-        ? { ...image, url: `${assetBaseUrl}${image.url}` }
-        : image,
-    ),
-  };
+  return withResolvedSeo(
+    {
+      ...product,
+      images: product.images.map((image) =>
+        image.url.startsWith("/")
+          ? { ...image, url: `${assetBaseUrl}${image.url}` }
+          : image,
+      ),
+    },
+    assetBaseUrl,
+  );
 }
 
 /**
@@ -222,21 +295,34 @@ export function createOrbitClient(
       }
     },
 
-    listCategories() {
-      return request<StorefrontCategory[]>("/api/storefront/categories");
+    async listCategories() {
+      const categories = await request<StorefrontCategory[]>(
+        "/api/storefront/categories",
+      );
+      return categories.map((category) => withResolvedSeo(category, assetBaseUrl));
     },
 
     async getCategory(slug: string) {
       try {
-        return await request<StorefrontCategory>(
+        const category = await request<StorefrontCategory>(
           `/api/storefront/categories/${encodeURIComponent(slug)}`,
         );
+        return withResolvedSeo(category, assetBaseUrl);
       } catch (error) {
         if (error instanceof OrbitApiError && error.status === 404) {
           return null;
         }
         throw error;
       }
+    },
+
+    async getSite() {
+      const site = await request<StorefrontSite>("/api/storefront/site");
+      return {
+        ...site,
+        defaultOgImageUrl: resolveAssetUrl(site.defaultOgImageUrl, assetBaseUrl),
+        logoUrl: resolveAssetUrl(site.logoUrl, assetBaseUrl),
+      };
     },
 
     async createOrder(input: OrderInput) {

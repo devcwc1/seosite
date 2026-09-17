@@ -11,6 +11,7 @@ import {
   type ProductImage,
 } from "@/lib/db/schema";
 import { categoriesForProducts } from "@/lib/categories/mutations";
+import { assetUrlsById } from "./assets";
 import { toStorefrontProduct, type StorefrontProductRow } from "./mapper";
 
 /** Read model behind the public storefront API. */
@@ -31,6 +32,9 @@ const selection = {
   legacyCategories: productContent.categories,
   /** Legacy jsonb gallery — only a fallback for rows not yet backfilled. */
   legacyImages: productContent.images,
+  meta: productContent.meta,
+  productUpdatedAt: products.updatedAt,
+  contentUpdatedAt: productContent.updatedAt,
 };
 
 /**
@@ -54,6 +58,8 @@ type BaseRow = Awaited<ReturnType<typeof selectPublished>>[number];
 type AssertRowMatchesMapper = BaseRow & {
   images: ProductImage[];
   categories: ProductCategory[];
+  ogImageUrl: string | null;
+  updatedAt: Date;
 } extends StorefrontProductRow
   ? true
   : never;
@@ -101,13 +107,22 @@ async function galleriesByProduct(
 
 async function withRelations(rows: BaseRow[]): Promise<StorefrontProductRow[]> {
   const ids = rows.map((row) => row.id);
-  const [galleries, categories] = await Promise.all([
+  const [galleries, categories, ogImages] = await Promise.all([
     galleriesByProduct(ids),
     categoriesForProducts(ids),
+    assetUrlsById(rows.map((row) => row.meta?.ogImageAssetId)),
   ]);
 
   return rows.map((row) => ({
     ...row,
+    ogImageUrl: row.meta?.ogImageAssetId
+      ? (ogImages.get(row.meta.ogImageAssetId) ?? null)
+      : null,
+    // Either row changing is an edit worth telling a crawler about.
+    updatedAt:
+      row.contentUpdatedAt > row.productUpdatedAt
+        ? row.contentUpdatedAt
+        : row.productUpdatedAt,
     // The join tables are authoritative; the snapshot jsonb is only read for
     // rows that predate them and that no editor has saved since.
     images: galleries.get(row.id) ?? row.legacyImages,

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { CategoryForm } from "@/components/categories/category-form";
 import { getCategory } from "@/lib/categories/mutations";
+import { assetUrlsById } from "@/lib/storefront/assets";
 
 export default async function EditCategoryPage({
   params,
@@ -11,6 +12,10 @@ export default async function EditCategoryPage({
   const { id } = await params;
   const category = await getCategory(id);
   if (!category) notFound();
+
+  // The share image is stored as an id; the form needs something to show.
+  const ogId = category.meta?.ogImageAssetId;
+  const ogImageUrl = ogId ? (await assetUrlsById([ogId])).get(ogId) : undefined;
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
@@ -29,6 +34,7 @@ export default async function EditCategoryPage({
           description: category.description ?? "",
           position: category.position,
           meta: category.meta,
+          ogImageUrl,
         }}
       />
     </div>

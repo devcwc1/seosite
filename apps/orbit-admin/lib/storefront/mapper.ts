@@ -1,6 +1,27 @@
-import type { StorefrontProduct } from "@orbit/next";
+import type { StorefrontProduct, StorefrontSeo } from "@orbit/next";
 
-import type { ProductCategory, ProductImage } from "@/lib/db/schema";
+import type { ProductCategory, ProductImage, ProductMeta } from "@/lib/db/schema";
+
+/**
+ * Stored page meta onto the wire shape. Values are passed through as the
+ * editor set them, or null — never a fallback. Choosing "the product name
+ * when there is no meta title" is the storefront's decision, and baking it in
+ * here would stop a consumer telling "set" from "inherited".
+ */
+export function toStorefrontSeo(
+  meta: ProductMeta | null | undefined,
+  ogImageUrl: string | null,
+): StorefrontSeo {
+  return {
+    title: meta?.title || null,
+    description: meta?.description || null,
+    keywords: meta?.keywords || null,
+    // Only resolved when the asset still exists; a deleted image is no image.
+    ogImageUrl,
+    noindex: meta?.noindex === true,
+    canonicalUrl: meta?.canonicalUrl || null,
+  };
+}
 
 /**
  * A published product joined to its live content row — the shape the storefront
@@ -21,6 +42,11 @@ export type StorefrontProductRow = {
   description: string | null;
   images: ProductImage[];
   categories: ProductCategory[];
+  meta: ProductMeta;
+  /** Resolved from meta.ogImageAssetId by the read query. */
+  ogImageUrl: string | null;
+  /** The later of the product row and its content row. */
+  updatedAt: Date;
 };
 
 /**
@@ -46,5 +72,7 @@ export function toStorefrontProduct(
     // Present images in display order; the DTO's `position` is authoritative.
     images: [...row.images].sort((a, b) => a.position - b.position),
     categories: row.categories,
+    seo: toStorefrontSeo(row.meta, row.ogImageUrl),
+    updatedAt: row.updatedAt.toISOString(),
   };
 }

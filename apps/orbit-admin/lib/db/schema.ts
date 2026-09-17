@@ -47,6 +47,10 @@ export type ProductMeta = {
    * usage, and protected by the same delete rules as a gallery image.
    */
   ogImageAssetId?: string;
+  /** Ask search engines not to index the page. Absent means indexable. */
+  noindex?: boolean;
+  /** Absolute URL, set only when the content canonically lives elsewhere. */
+  canonicalUrl?: string;
 };
 
 /** A single customer review authored/managed in the admin. */

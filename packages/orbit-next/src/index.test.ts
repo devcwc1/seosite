@@ -21,6 +21,15 @@ function product(images: StorefrontProduct["images"]): StorefrontProduct {
     inStock: true,
     images,
     categories: [],
+    seo: {
+      title: null,
+      description: null,
+      keywords: null,
+      ogImageUrl: null,
+      noindex: false,
+      canonicalUrl: null,
+    },
+    updatedAt: "2026-01-01T00:00:00.000Z",
   };
 }
 

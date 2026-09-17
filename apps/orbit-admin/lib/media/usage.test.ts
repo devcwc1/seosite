@@ -111,7 +111,7 @@ describe("usageForAsset", () => {
     const usage = await usageForAsset(sharedAsset);
 
     expect(usage).toHaveLength(3);
-    expect(usage.map((u) => u.productId).sort()).toEqual(
+    expect(usage.map((u) => u.targetId).sort()).toEqual(
       [productA, productB, productC].sort(),
     );
   });
@@ -120,8 +120,8 @@ describe("usageForAsset", () => {
     const usage = await usageForAsset(sharedAsset);
 
     for (const ref of usage) {
-      expect(ref.productTitle).toMatch(/^Usage [ABC] /);
-      expect(ref.productSlug).toContain(`usage-${suffix}-`);
+      expect(ref.title).toMatch(/^Usage [ABC] /);
+      expect(ref.href).toBe(`/products/${ref.targetId}`);
     }
   });
 
@@ -131,7 +131,7 @@ describe("usageForAsset", () => {
     const usage = await usageForAsset(ogOnlyAsset);
 
     expect(usage).toHaveLength(1);
-    expect(usage[0]).toMatchObject({ productId: productA, kind: "ogImage" });
+    expect(usage[0]).toMatchObject({ targetId: productA, kind: "ogImage" });
   });
 
   it("returns nothing for an asset no product references", async () => {
@@ -142,7 +142,7 @@ describe("usageForAsset", () => {
     await setOgImage(productB, sharedAsset);
 
     const usage = await usageForAsset(sharedAsset);
-    const forB = usage.filter((u) => u.productId === productB);
+    const forB = usage.filter((u) => u.targetId === productB);
 
     expect(forB.map((u) => u.kind).sort()).toEqual(["gallery", "ogImage"]);
 

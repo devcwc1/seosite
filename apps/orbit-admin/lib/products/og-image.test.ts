@@ -127,7 +127,7 @@ describe("the OG image field", () => {
     const second = await makeAsset("second");
     const productId = await create(first, "swap");
 
-    const swap = { ...input(second, "swap"), meta: { title: "", description: "", keywords: "", ogImageAssetId: second } };
+    const swap = input(second, "swap");
     expect((await updateProduct(productId, swap, null)).ok).toBe(true);
     expect((await getProductForEdit(productId))?.meta.ogImageAssetId).toBe(second);
 

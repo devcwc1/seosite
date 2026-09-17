@@ -18,6 +18,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  SeoMetaFields,
+  seoMetaFromStored,
+  seoMetaPayload,
+  type SeoMetaValue,
+} from "@/components/seo/seo-meta-fields";
 import type { CategoryFormPayload } from "@/lib/categories/validation";
 
 /** Kept local so zod stays server-side, matching the product form. */
@@ -35,7 +41,16 @@ export type CategoryFormInitial = {
   slug: string;
   description: string;
   position: number;
-  meta: { title?: string; description?: string; keywords?: string };
+  meta: {
+    title?: string;
+    description?: string;
+    keywords?: string;
+    ogImageAssetId?: string;
+    noindex?: boolean;
+    canonicalUrl?: string;
+  };
+  /** Served URL for meta.ogImageAssetId, resolved by the page. */
+  ogImageUrl?: string;
 };
 
 function FieldError({ message }: { message?: string }) {
@@ -63,10 +78,11 @@ export function CategoryForm({
     slug: initial?.slug ?? "",
     description: initial?.description ?? "",
     position: String(initial?.position ?? 0),
-    metaTitle: initial?.meta.title ?? "",
-    metaDescription: initial?.meta.description ?? "",
-    metaKeywords: initial?.meta.keywords ?? "",
   });
+
+  const [seo, setSeo] = useState<SeoMetaValue>(() =>
+    seoMetaFromStored(initial?.meta, initial?.ogImageUrl),
+  );
 
   function set<K extends keyof typeof values>(
     key: K,
@@ -83,11 +99,7 @@ export function CategoryForm({
       slug: values.slug,
       description: values.description,
       position: values.position,
-      meta: {
-        title: values.metaTitle,
-        description: values.metaDescription,
-        keywords: values.metaKeywords,
-      },
+      meta: seoMetaPayload(seo),
     };
 
     startTransition(async () => {
@@ -192,43 +204,22 @@ export function CategoryForm({
 
       <Card>
         <CardHeader>
-          <CardTitle>SEO</CardTitle>
+          <CardTitle>Search &amp; social</CardTitle>
           <CardDescription>
-            Leave blank to let the storefront derive them from the name and
-            intro.
+            How this archive page appears in search results and when it is
+            shared. Leave fields blank to use the name and intro.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4">
-          <div className="grid gap-2">
-            <Label htmlFor="metaTitle">Meta title</Label>
-            <Input
-              id="metaTitle"
-              value={values.metaTitle}
-              onChange={(e) => set("metaTitle", e.target.value)}
-            />
-            <FieldError message={errors["meta.title"]} />
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="metaDescription">Meta description</Label>
-            <Textarea
-              id="metaDescription"
-              rows={3}
-              value={values.metaDescription}
-              onChange={(e) => set("metaDescription", e.target.value)}
-            />
-            <FieldError message={errors["meta.description"]} />
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="metaKeywords">Meta keywords</Label>
-            <Input
-              id="metaKeywords"
-              value={values.metaKeywords}
-              onChange={(e) => set("metaKeywords", e.target.value)}
-            />
-            <FieldError message={errors["meta.keywords"]} />
-          </div>
+        <CardContent>
+          <SeoMetaFields
+            idPrefix="category-seo"
+            value={seo}
+            onChange={(patch) => setSeo((prev) => ({ ...prev, ...patch }))}
+            errors={errors}
+            path={`/categories/${values.slug || "…"}`}
+            fallbackTitle={values.name}
+            fallbackDescription={values.description}
+          />
         </CardContent>
       </Card>
 

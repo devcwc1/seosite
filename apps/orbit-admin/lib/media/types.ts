@@ -23,12 +23,19 @@ export type MediaAssetDTO = {
   usageCount: number;
 };
 
-/** One product that references an asset, for the detail drawer. */
+/** One thing that references an asset, for the detail drawer. */
 export type MediaUsageDTO = {
-  productId: string;
-  productSlug: string;
-  productTitle: string;
-  kind: "gallery" | "ogImage";
+  kind:
+    | "gallery"
+    | "ogImage"
+    | "categoryOgImage"
+    | "siteDefaultOgImage"
+    | "siteLogo";
+  /** Product or category id; the settings key for site-wide uses. */
+  targetId: string;
+  title: string;
+  /** Where in the admin to change it. */
+  href: string;
 };
 
 /** One asset plus everything the detail drawer shows. */

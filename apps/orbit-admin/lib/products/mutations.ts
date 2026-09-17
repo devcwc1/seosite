@@ -11,6 +11,7 @@ import {
   type ProductCategorySelection,
 } from "@/lib/categories/mutations";
 import { sanitizeRichText } from "@/lib/content/sanitize";
+import { toStoredMeta } from "@/lib/seo/meta";
 import { assetUrl, getProductGallery, setProductGallery } from "@/lib/media/assets";
 import { db } from "@/lib/db";
 import {
@@ -61,16 +62,7 @@ function toDescription(input: ProductParsed): string | null {
 }
 
 function toMeta(input: ProductParsed): ProductMeta {
-  const meta: ProductMeta = {};
-  if (input.meta.title) meta.title = input.meta.title;
-  if (input.meta.description) meta.description = input.meta.description;
-  if (input.meta.keywords) meta.keywords = input.meta.keywords;
-  // Absent rather than empty: the key only exists when an image is chosen,
-  // so the usage query can match on its presence.
-  if (input.meta.ogImageAssetId) {
-    meta.ogImageAssetId = input.meta.ogImageAssetId;
-  }
-  return meta;
+  return toStoredMeta(input.meta);
 }
 
 function toReviews(input: ProductParsed): ProductReview[] {

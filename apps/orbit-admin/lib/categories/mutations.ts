@@ -1,4 +1,5 @@
 import "server-only";
+import { toStoredMeta } from "@/lib/seo/meta";
 
 import { asc, count, eq, inArray } from "drizzle-orm";
 
@@ -20,11 +21,7 @@ export type MutationResult =
 export type CategoryWithCount = Category & { productCount: number };
 
 function toMeta(input: CategoryParsed): ProductMeta {
-  const meta: ProductMeta = {};
-  if (input.meta.title) meta.title = input.meta.title;
-  if (input.meta.description) meta.description = input.meta.description;
-  if (input.meta.keywords) meta.keywords = input.meta.keywords;
-  return meta;
+  return toStoredMeta(input.meta);
 }
 
 /** Ordered as the storefront nav shows them: position, then name. */

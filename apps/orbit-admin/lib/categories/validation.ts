@@ -1,12 +1,21 @@
 import { z } from "zod";
 
+import { seoMetaInputSchema } from "@/lib/seo/meta";
+
 /** What the category form sends. */
 export type CategoryFormPayload = {
   name: string;
   slug: string;
   description: string;
   position: string;
-  meta: { title: string; description: string; keywords: string };
+  meta: {
+    title: string;
+    description: string;
+    keywords: string;
+    ogImageAssetId: string;
+    noindex: boolean;
+    canonicalUrl: string;
+  };
 };
 
 export const categoryInputSchema = z.object({
@@ -27,11 +36,7 @@ export const categoryInputSchema = z.object({
     .int("Position must be a whole number")
     .min(0, "Position cannot be negative")
     .max(999),
-  meta: z.object({
-    title: z.string().trim().max(255),
-    description: z.string().trim().max(1000),
-    keywords: z.string().trim().max(500),
-  }),
+  meta: seoMetaInputSchema,
 });
 
 export type CategoryParsed = z.output<typeof categoryInputSchema>;

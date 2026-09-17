@@ -2,7 +2,15 @@ import { asc, eq, sql } from "drizzle-orm";
 import type { StorefrontCategory } from "@orbit/next";
 
 import { db } from "@/lib/db";
-import { categories, productCategories, products } from "@/lib/db/schema";
+import {
+  categories,
+  productCategories,
+  products,
+  type ProductMeta,
+} from "@/lib/db/schema";
+
+import { assetUrlsById } from "./assets";
+import { toStorefrontSeo } from "./mapper";
 
 /**
  * Read model behind the public category API.
@@ -19,24 +27,35 @@ const selection = {
   meta: categories.meta,
   position: categories.position,
   productCount: publishedCount,
+  updatedAt: categories.updatedAt,
 };
 
-function toDto(row: {
+type CategoryRow = {
   slug: string;
   name: string;
   description: string | null;
-  meta: { title?: string; description?: string; keywords?: string };
+  meta: ProductMeta;
   position: number;
   productCount: number;
-}): StorefrontCategory {
+  updatedAt: Date;
+};
+
+function toDto(row: CategoryRow, ogImageUrls: Map<string, string>): StorefrontCategory {
+  const ogId = row.meta?.ogImageAssetId;
   return {
     slug: row.slug,
     name: row.name,
     description: row.description,
-    meta: row.meta,
+    seo: toStorefrontSeo(row.meta, ogId ? (ogImageUrls.get(ogId) ?? null) : null),
     position: row.position,
     productCount: Number(row.productCount),
+    updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+async function toDtos(rows: CategoryRow[]): Promise<StorefrontCategory[]> {
+  const urls = await assetUrlsById(rows.map((row) => row.meta?.ogImageAssetId));
+  return rows.map((row) => toDto(row, urls));
 }
 
 export async function listStorefrontCategories(): Promise<
@@ -53,7 +72,7 @@ export async function listStorefrontCategories(): Promise<
     .groupBy(categories.id)
     .orderBy(asc(categories.position), asc(categories.name));
 
-  return rows.map(toDto);
+  return toDtos(rows);
 }
 
 export async function getStorefrontCategory(
@@ -71,6 +90,6 @@ export async function getStorefrontCategory(
     .groupBy(categories.id)
     .limit(1);
 
-  const row = rows[0];
-  return row ? toDto(row) : null;
+  const [dto] = await toDtos(rows);
+  return dto ?? null;
 }

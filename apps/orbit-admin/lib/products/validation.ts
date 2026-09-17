@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { seoMetaInputSchema } from "@/lib/seo/meta";
+
 /** Payload shape the client form sends (numeric text stays as strings). */
 export type ProductReviewPayload = {
   id: string;
@@ -33,6 +35,9 @@ export type ProductFormPayload = {
     keywords: string;
     /** Media asset id, or "" for none. */
     ogImageAssetId: string;
+    noindex: boolean;
+    /** Absolute URL, or "" for none. */
+    canonicalUrl: string;
   };
   reviews: ProductReviewPayload[];
 };
@@ -87,16 +92,7 @@ export const productInputSchema = z.object({
     .min(0, "Stock cannot be negative"),
   images: z.array(imageSchema),
   categories: z.array(categorySchema).max(10, "At most 10 categories"),
-  meta: z.object({
-    title: z.string().trim().max(255),
-    description: z.string().trim().max(1000),
-    keywords: z.string().trim().max(500),
-    // Empty means "no OG image"; anything else must be a real asset id, so a
-    // malformed value is rejected rather than stored and rendered later.
-    ogImageAssetId: z
-      .union([z.literal(""), z.string().uuid("Invalid image reference")])
-      .default(""),
-  }),
+  meta: seoMetaInputSchema,
   reviews: z.array(reviewSchema),
 });
 
