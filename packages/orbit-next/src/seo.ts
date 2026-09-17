@@ -94,8 +94,10 @@ export function buildRobotsTxt(options: RobotsOptions): string {
     for (const path of options.disallow ?? []) lines.push(`Disallow: ${path}`);
   }
 
+  // Not with indexing off: an extra `Allow` rule for one crawler would let
+  // that crawler back into a site the admin has closed to all of them.
   const extra = options.extra?.trim();
-  if (extra) lines.push("", extra);
+  if (extra && options.allowIndexing) lines.push("", extra);
 
   if (options.allowIndexing && options.sitemapUrl) {
     lines.push("", `Sitemap: ${options.sitemapUrl}`);

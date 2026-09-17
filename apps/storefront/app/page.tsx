@@ -1,6 +1,9 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import type { StorefrontProduct } from "@orbit/next";
+import { siteJsonLd } from "@orbit/next/seo";
 
+import { JsonLd } from "@/components/json-ld";
 import {
   ArrowRightIcon,
   CheckIcon,
@@ -11,6 +14,7 @@ import {
 } from "@/components/icons";
 import { StockBadge } from "@/components/stock-badge";
 import { formatPrice, orbit, primaryImage } from "@/lib/orbit";
+import { getSite, pageMetadata, siteOrigin } from "@/lib/seo";
 
 /**
  * Home, following the Apotheek 24/7 "Home" screen: hero band with a stat card,
@@ -94,7 +98,14 @@ function FeaturedCard({ product }: { product: StorefrontProduct }) {
   );
 }
 
+export async function generateMetadata(): Promise<Metadata> {
+  const site = await getSite();
+  return pageMetadata(site, { path: "/" });
+}
+
 export default async function HomePage() {
+  const site = await getSite();
+
   let products: StorefrontProduct[] = [];
   let reachable = true;
 
@@ -109,6 +120,7 @@ export default async function HomePage() {
 
   return (
     <>
+      <JsonLd data={siteJsonLd(site, siteOrigin(site))} />
       {/* -- hero ---------------------------------------------------------- */}
       <section className="hero-band relative overflow-hidden py-section-gap text-on-primary">
         <div className="shell flex flex-col items-start justify-between gap-lg md:flex-row md:items-center">

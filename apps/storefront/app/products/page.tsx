@@ -1,12 +1,26 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import type { StorefrontProduct } from "@orbit/next";
 
 import { ProductCard } from "@/components/product-card";
 import { orbit, matchesQuery } from "@/lib/orbit";
+import { getSite, pageMetadata } from "@/lib/seo";
 
-export const metadata = {
-  title: "Catalog",
-};
+export async function generateMetadata({
+  searchParams,
+}: CatalogPageProps): Promise<Metadata> {
+  const { q } = await searchParams;
+  const site = await getSite();
+
+  return pageMetadata(site, {
+    path: "/products",
+    title: "Catalog",
+    description: `Every product in ${site.siteName}.`,
+    // A search results page is a different page for every query, and none of
+    // them is something to send a searcher to.
+    noindex: Boolean(q?.trim()),
+  });
+}
 
 type CatalogPageProps = {
   // Category browsing lives at /categories/[slug] — its own indexable page —

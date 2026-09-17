@@ -9,6 +9,8 @@ import { orbit } from "@/lib/orbit";
 
 export const metadata = {
   title: "Checkout",
+  // One shopper's cart or order is never something to find in a search engine.
+  robots: { index: false, follow: false },
 };
 
 const inputClass =

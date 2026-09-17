@@ -80,7 +80,7 @@ describe("serializeJsonLd", () => {
   });
 
   it("is still the same JSON to a parser", () => {
-    const data = { name: "A & B <c>  " };
+    const data = { name: `A & B <c> ${String.fromCharCode(0x2028)}` };
     expect(JSON.parse(serializeJsonLd(data))).toEqual(data);
   });
 });
@@ -103,6 +103,17 @@ describe("buildRobotsTxt", () => {
       allowIndexing: false,
       sitemapUrl: "https://shop.example/sitemap.xml",
       disallow: ["/cart"],
+    });
+
+    expect(txt).toBe("User-agent: *\nDisallow: /\n");
+  });
+
+  it("leaves the admin's extra lines out when indexing is off", () => {
+    // Otherwise "User-agent: Googlebot / Allow: /" would reopen a closed site.
+    const txt = buildRobotsTxt({
+      allowIndexing: false,
+      sitemapUrl: null,
+      extra: "User-agent: Googlebot\nAllow: /",
     });
 
     expect(txt).toBe("User-agent: *\nDisallow: /\n");

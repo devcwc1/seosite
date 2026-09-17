@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { breadcrumbJsonLd } from "@orbit/next/seo";
+
 import { CategorySidebar } from "@/components/category-sidebar";
+import { JsonLd } from "@/components/json-ld";
 import { ProductCard } from "@/components/product-card";
 import {
   allCategories,
@@ -13,6 +16,7 @@ import {
   sortProducts,
   type SortKey,
 } from "@/lib/orbit";
+import { absoluteUrl, getSite, pageMetadata } from "@/lib/seo";
 
 const PAGE_SIZE = 12;
 const DEFAULT_SORT: SortKey = "name";
@@ -62,17 +66,19 @@ export async function generateMetadata({
 
   if (!category) return { title: "Category not found" };
 
-  // An editor's meta wins; otherwise it is derived from what the page holds.
-  return {
-    title: category.meta.title || category.name,
+  const site = await getSite();
+
+  // The editor's values win; otherwise it is derived from what the page holds.
+  return pageMetadata(site, {
+    path: `/categories/${category.slug}`,
+    title: category.name,
+    seo: category.seo,
     description:
-      category.meta.description ||
       category.description ||
       `${category.productCount} ${
         category.productCount === 1 ? "product" : "products"
       } in ${category.name}.`,
-    keywords: category.meta.keywords || undefined,
-  };
+  });
 }
 
 export default async function CategoryPage({
@@ -147,8 +153,22 @@ export default async function CategoryPage({
     return `/categories/${slug}${suffix ? `?${suffix}` : ""}`;
   }
 
+  const site = await getSite();
+
   return (
     <main className="shell py-section-gap">
+      {category ? (
+        <JsonLd
+          data={breadcrumbJsonLd([
+            { name: "Home", url: absoluteUrl(site, "/") },
+            { name: "Categories", url: absoluteUrl(site, "/categories") },
+            {
+              name: category.name,
+              url: absoluteUrl(site, `/categories/${category.slug}`),
+            },
+          ])}
+        />
+      ) : null}
       <div className="mb-lg">
         <nav aria-label="Breadcrumb" className="mb-sm">
           <ol className="flex flex-wrap items-center gap-xs text-body-sm text-on-surface-variant">

@@ -75,6 +75,9 @@ services:
       # Image URLs are rendered in the browser, which cannot reach the private
       # address above — resolve them against the admin's public origin.
       ORBIT_ASSET_BASE_URL: https://${ADMIN_DOMAIN:-admin.localhost}
+      # Public origin for canonical links, the sitemap and share cards, used
+      # until an admin sets Site URL under Settings → Search & social.
+      SITE_URL: https://${STOREFRONT_DOMAIN:-localhost}
       # Presented server-to-server when a customer places an order; must match
       # the admin's. Never reaches the browser.
       ORBIT_WRITE_TOKEN: ${ORBIT_WRITE_TOKEN:?set ORBIT_WRITE_TOKEN in .env}

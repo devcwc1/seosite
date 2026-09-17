@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { StorefrontProduct } from "@orbit/next";
+import { breadcrumbJsonLd, productJsonLd } from "@orbit/next/seo";
 
 import {
   ArrowRightIcon,
@@ -10,6 +11,7 @@ import {
   PlugIcon,
   ShieldIcon,
 } from "@/components/icons";
+import { JsonLd } from "@/components/json-ld";
 import { addToCartAction } from "@/lib/cart-actions";
 import { MAX_QUANTITY } from "@/lib/cart";
 import {
@@ -19,6 +21,7 @@ import {
   primaryCategory,
   primaryImage,
 } from "@/lib/orbit";
+import { absoluteUrl, getSite, pageMetadata } from "@/lib/seo";
 
 /**
  * The `[id]` segment carries a product's public slug — the stable identifier
@@ -67,10 +70,16 @@ export async function generateMetadata({
     return { title: "Product not found" };
   }
 
-  return {
+  const site = await getSite();
+
+  return pageMetadata(site, {
+    path: `/products/${product.slug}`,
     title: product.title,
-    description: product.shortInfo ?? undefined,
-  };
+    seo: product.seo,
+    description: product.shortInfo ?? product.description,
+    // No chosen share image: the product's own photo beats the site default.
+    images: galleryImages(product).map((image) => image.url),
+  });
 }
 
 /** The design's related-product card: image, title, price, one action. */
@@ -151,8 +160,28 @@ export default async function ProductPage({
     related = [];
   }
 
+  const site = await getSite();
+  const productUrl = absoluteUrl(site, `/products/${product.slug}`);
+
   return (
     <main className="shell py-section-gap">
+      <JsonLd
+        data={[
+          productJsonLd(product, { url: productUrl, siteName: site.siteName }),
+          breadcrumbJsonLd([
+            { name: "Home", url: absoluteUrl(site, "/") },
+            ...(category
+              ? [
+                  {
+                    name: category.name,
+                    url: absoluteUrl(site, `/categories/${category.slug}`),
+                  },
+                ]
+              : []),
+            { name: product.title, url: productUrl },
+          ]),
+        ]}
+      />
       <nav aria-label="Breadcrumb" className="mb-lg">
         <ol className="flex flex-wrap items-center gap-xs text-body-sm text-on-surface-variant">
           <li>

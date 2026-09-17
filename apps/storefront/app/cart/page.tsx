@@ -21,6 +21,8 @@ import { formatPrice, orbit, primaryImage } from "@/lib/orbit";
 
 export const metadata = {
   title: "Cart",
+  // One shopper's cart or order is never something to find in a search engine.
+  robots: { index: false, follow: false },
 };
 
 function money(cents: number, currency: string) {

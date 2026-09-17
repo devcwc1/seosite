@@ -6,6 +6,8 @@ import { CheckoutStepper } from "@/components/checkout-stepper";
 
 export const metadata = {
   title: "Order confirmed",
+  // One shopper's cart or order is never something to find in a search engine.
+  robots: { index: false, follow: false },
 };
 
 export default async function ConfirmationPage({

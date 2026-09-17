@@ -182,7 +182,7 @@ export function SeoMetaFields({
         />
         <LengthHint
           id={id("description-hint")}
-          length={value.description.length}
+          length={(value.description || fallbackDescription).length}
           recommended={DESCRIPTION_RECOMMENDED}
         />
         <Error field="description" />

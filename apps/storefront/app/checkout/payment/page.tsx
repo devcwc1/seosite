@@ -11,6 +11,8 @@ import { orbit } from "@/lib/orbit";
 
 export const metadata = {
   title: "Payment",
+  // One shopper's cart or order is never something to find in a search engine.
+  robots: { index: false, follow: false },
 };
 
 export default async function PaymentPage({

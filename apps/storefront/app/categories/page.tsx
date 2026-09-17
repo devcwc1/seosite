@@ -1,14 +1,20 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { ArrowRightIcon } from "@/components/icons";
 import type { StorefrontCategory } from "@orbit/next";
 
 import { orbit } from "@/lib/orbit";
+import { getSite, pageMetadata } from "@/lib/seo";
 
-export const metadata = {
-  title: "Categories",
-  description: "Every category in the Orbit catalog, with what each holds.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const site = await getSite();
+  return pageMetadata(site, {
+    path: "/categories",
+    title: "Categories",
+    description: `Every category in ${site.siteName}, with what each holds.`,
+  });
+}
 
 export default async function CategoriesPage() {
   let categories: StorefrontCategory[] = [];

@@ -7,6 +7,7 @@ import logo from "@/public/logo.webp";
 import { ArrowUpIcon, CartIcon, SearchIcon } from "@/components/icons";
 import { countItems, readCart } from "@/lib/cart";
 import { orbit } from "@/lib/orbit";
+import { getSite, siteOrigin } from "@/lib/seo";
 
 import "./globals.css";
 
@@ -20,14 +21,32 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
-export const metadata: Metadata = {
-  title: {
-    default: "Orbit Storefront",
-    template: "%s · Orbit Storefront",
-  },
-  description:
-    "Reference storefront consuming Orbit content through the @orbit/next SDK.",
-};
+/**
+ * Site-wide defaults, all controlled from Orbit (Settings → Search & social).
+ * Pages refine these through lib/seo's pageMetadata.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const site = await getSite();
+
+  return {
+    // Relative URLs in any page's metadata resolve against the public origin.
+    metadataBase: new URL(siteOrigin(site)),
+    title: { default: site.siteName, template: site.titleTemplate },
+    ...(site.defaultDescription ? { description: site.defaultDescription } : {}),
+    robots: site.allowIndexing
+      ? { index: true, follow: true }
+      : { index: false, follow: false },
+    openGraph: {
+      type: "website",
+      siteName: site.siteName,
+      ...(site.defaultOgImageUrl ? { images: [{ url: site.defaultOgImageUrl }] } : {}),
+    },
+    twitter: {
+      card: site.defaultOgImageUrl ? "summary_large_image" : "summary",
+      ...(site.twitterHandle ? { site: site.twitterHandle } : {}),
+    },
+  };
+}
 
 /**
  * Search posts straight to the catalog as a GET — no client component, no
