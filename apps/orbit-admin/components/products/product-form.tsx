@@ -344,8 +344,10 @@ export function ProductForm({
               ariaLabel="Product description"
             />
             <p className="text-xs text-muted-foreground">
-              Headings, lists and links are kept; anything else is stripped
-              when the product is saved.
+              Headings 1–6, lists, quotes and links are kept; anything else is
+              stripped when the product is saved. Use{" "}
+              <span className="font-medium">HTML</span> to paste or edit the
+              markup directly.
             </p>
             <FieldError message={errors.description} />
           </div>

@@ -11,15 +11,20 @@ import sanitizeHtml from "sanitize-html";
  * discarded, including the tags that make HTML dangerous (`script`, `style`,
  * `iframe`), every `on*` handler, and any attribute not named below.
  *
- * `h1` is deliberately absent: the storefront gives the product title the
- * page's only h1, and a second one in body copy is both a document-outline
- * mistake and an SEO one.
+ * All six heading levels are allowed. Note that the storefront already gives
+ * the product title an h1, so an h1 in body copy makes a second one on the
+ * page — legal HTML5, but a document-outline and SEO smell. The allowlist
+ * permits it because an editor asked for it; the judgement is theirs to make
+ * per description, not this function's to make for them.
  */
 const ALLOWED_TAGS = [
   "p",
+  "h1",
   "h2",
   "h3",
   "h4",
+  "h5",
+  "h6",
   "strong",
   "em",
   "s",

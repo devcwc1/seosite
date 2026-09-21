@@ -36,3 +36,49 @@ if (typeof window.matchMedia !== "function") {
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = function scrollIntoView() {};
 }
+
+/**
+ * Geometry. ProseMirror asks the document where things are on screen so it
+ * can keep the caret in view; jsdom has no layout and returns nothing, and
+ * the editor throws mid-transaction. Zero rectangles are the honest answer
+ * from a document that was never laid out, and they satisfy the callers.
+ */
+const EMPTY_RECT: DOMRect = {
+  x: 0,
+  y: 0,
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  width: 0,
+  height: 0,
+  toJSON: () => ({}),
+};
+
+function emptyRectList(): DOMRectList {
+  const list = [] as unknown as DOMRectList;
+  Object.defineProperty(list, "item", { value: () => null });
+  return list;
+}
+
+if (typeof Range.prototype.getClientRects !== "function") {
+  Range.prototype.getClientRects = emptyRectList;
+  Range.prototype.getBoundingClientRect = () => EMPTY_RECT;
+}
+
+if (typeof Element.prototype.getClientRects !== "function") {
+  Element.prototype.getClientRects = emptyRectList;
+}
+
+/**
+ * Hit testing. ProseMirror maps a mousedown's coordinates back to a document
+ * position; jsdom has no such method, and the resulting TypeError escapes the
+ * event handler as an unhandled rejection that can fail an unrelated test.
+ *
+ * Returning null is the correct answer for "no element at that point" in a
+ * document with no layout — ProseMirror then falls back to its DOM-based
+ * path, which is what actually resolves the click here.
+ */
+if (typeof document.elementFromPoint !== "function") {
+  document.elementFromPoint = () => null;
+}

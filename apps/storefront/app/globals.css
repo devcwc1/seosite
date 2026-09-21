@@ -226,6 +226,21 @@
   margin-bottom: 0;
 }
 
+/*
+ * h1 is allowed in product copy, but the page already has one in the product
+ * title, so it is set a step below the page title rather than competing with
+ * it. See lib/content/sanitize.ts in the admin for why it is permitted.
+ */
+.rich-text h1 {
+  margin: var(--spacing-lg) 0 var(--spacing-sm);
+  font-size: var(--text-headline-lg);
+  line-height: var(--text-headline-lg--line-height);
+  letter-spacing: var(--text-headline-lg--letter-spacing);
+  font-weight: 700;
+  color: var(--color-on-surface);
+  text-wrap: balance;
+}
+
 .rich-text h2 {
   margin: var(--spacing-lg) 0 var(--spacing-sm);
   font-size: var(--text-headline-md);
@@ -266,6 +281,12 @@
   margin-bottom: var(--spacing-base);
 }
 
+/* The editor wraps list-item content in a paragraph; without this the bullet
+   inherits the paragraph's bottom margin and the list falls apart. */
+.rich-text li > p {
+  margin: 0;
+}
+
 .rich-text blockquote {
   margin: var(--spacing-md) 0;
   padding-left: var(--spacing-sm);
@@ -277,6 +298,22 @@
   color: var(--color-primary);
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+/* Below h4 the scale stops shrinking; weight and colour carry the level. */
+.rich-text h5,
+.rich-text h6 {
+  margin: var(--spacing-md) 0 var(--spacing-base);
+  font-size: var(--text-body-md);
+  line-height: var(--text-body-md--line-height);
+  font-weight: 600;
+  color: var(--color-on-surface);
+}
+
+.rich-text h6 {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-on-surface-variant);
 }
 
 .rich-text strong {
