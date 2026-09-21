@@ -9,7 +9,6 @@ import {
   parseDecimal,
   parseImageUrls,
   parseRow,
-  suggestMapping,
   type ColumnMapping,
   type ImportRow,
 } from "./import-map";
@@ -65,34 +64,6 @@ describe("value coercion", () => {
     expect(
       parseImageUrls("https://a.test/1.jpg, ftp://x/2.jpg\nhttp://b.test/3.png"),
     ).toEqual(["https://a.test/1.jpg", "http://b.test/3.png"]);
-  });
-});
-
-describe("suggestMapping", () => {
-  it("guesses WooCommerce and Yoast columns by header", () => {
-    const headers = [
-      "ID",
-      "SKU",
-      "Name",
-      "Regular price",
-      "Categories",
-      "Meta: _yoast_wpseo_title",
-    ];
-    const m = suggestMapping(headers);
-
-    expect(m.sku).toBe(1);
-    expect(m.title).toBe(2);
-    expect(m.price).toBe(3);
-    expect(m.categories).toBe(4);
-    expect(m.metaTitle).toBe(5);
-  });
-
-  it("never maps two fields to one column", () => {
-    // "Name" hints both title and (loosely) nothing else, but each index is
-    // claimed once — a duplicated header cannot feed two fields.
-    const m = suggestMapping(["Name", "Name"]);
-    const used = Object.values(m).filter((v) => v !== null && v !== undefined);
-    expect(new Set(used).size).toBe(used.length);
   });
 });
 

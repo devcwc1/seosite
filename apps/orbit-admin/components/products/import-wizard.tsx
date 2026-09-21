@@ -16,7 +16,6 @@ import {
   DEFAULT_IMPORT_OPTIONS,
   IMPORT_FIELDS,
   REQUIRED_FIELDS,
-  suggestMapping,
   type ColumnMapping,
   type ImportField,
   type ImportOptions,
@@ -76,7 +75,8 @@ export function ImportWizard() {
       return;
     }
     setFile({ name: chosen.name, text, headers, sample: rows.slice(0, 5) });
-    setMapping(suggestMapping(headers));
+    // Nothing is guessed from header names — the admin maps each field.
+    setMapping({});
     setStep("map");
   }
 
@@ -169,8 +169,9 @@ export function ImportWizard() {
           <div>
             <p className="text-body">
               <span className="font-medium">{file.name}</span> — {file.headers.length} columns.
-              Match each Orbit field to a column. Name and SKU are required; the
-              rest are optional.
+              Point each Orbit field at a column. A sample value from the file
+              is shown beside each one. Name and SKU are required; the rest are
+              optional.
             </p>
           </div>
 

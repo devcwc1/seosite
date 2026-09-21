@@ -7,11 +7,10 @@ import { slugify } from "./validation";
  * validation rules can be tested directly and a preview can be built without
  * writing anything. The database and image work live in ./import.ts.
  *
- * Columns are referenced by position, not header name. Exports mangle their
- * own headers often enough (a shifted column, a duplicated name, a blank) that
- * trusting the header to line up with the data is how an import quietly loads
- * prices into the stock field. The admin confirms the mapping against a
- * preview of real values before anything runs.
+ * The admin maps each field to a column by hand; nothing is inferred from
+ * header names. A header is only a label — an export that mislabels or shifts
+ * its columns would otherwise load, say, prices into the stock field — so the
+ * mapping is by position, shown against a real sample value before it runs.
  */
 
 /** Orbit product fields an import can populate. */
@@ -93,54 +92,6 @@ export type RowIssue = { field: ImportField | "row"; message: string };
 export type ParsedRow =
   | { ok: true; row: ImportRow }
   | { ok: false; line: number; sku: string; title: string; issues: RowIssue[] };
-
-/* ------------------------------- guessing -------------------------------- */
-
-/**
- * Common header spellings for each field, lowercased. A WooCommerce export
- * uses the long forms; a hand-made sheet uses the short ones.
- */
-const HEADER_HINTS: Record<ImportField, string[]> = {
-  title: ["name", "title", "product name", "post_title"],
-  sku: ["sku", "article number", "artikelnummer"],
-  slug: ["slug", "permalink", "handle", "post_name"],
-  shortInfo: ["short description", "short_description", "excerpt", "teaser"],
-  description: ["description", "post_content", "body", "content"],
-  price: ["regular price", "price", "regular_price"],
-  currency: ["currency", "valuta"],
-  stockQuantity: ["stock", "quantity", "qty", "inventory"],
-  inStock: ["in stock?", "in stock", "in_stock", "stock status", "availability"],
-  status: ["published", "status", "post_status"],
-  categories: ["categories", "category", "product categories", "product_cat"],
-  images: ["images", "image", "image url", "featured image", "afbeelding"],
-  metaTitle: ["meta: _yoast_wpseo_title", "meta title", "seo title", "meta_title"],
-  metaDescription: [
-    "meta: _yoast_wpseo_metadesc",
-    "meta description",
-    "seo description",
-    "meta_description",
-  ],
-  metaKeywords: ["meta: _yoast_wpseo_focuskw", "meta keywords", "keywords", "focus keyword"],
-};
-
-/** A best-guess mapping from a header row. The admin corrects it. */
-export function suggestMapping(headers: string[]): ColumnMapping {
-  const normalized = headers.map((h) => h.trim().toLowerCase());
-  const mapping: ColumnMapping = {};
-  const taken = new Set<number>();
-
-  for (const field of IMPORT_FIELDS) {
-    for (const hint of HEADER_HINTS[field]) {
-      const index = normalized.indexOf(hint);
-      if (index !== -1 && !taken.has(index)) {
-        mapping[field] = index;
-        taken.add(index);
-        break;
-      }
-    }
-  }
-  return mapping;
-}
 
 /* ------------------------------- coercion -------------------------------- */
 

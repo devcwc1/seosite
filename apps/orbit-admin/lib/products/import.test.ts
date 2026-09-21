@@ -5,8 +5,7 @@ import { db, pool } from "@/lib/db";
 import { categories, products } from "@/lib/db/schema";
 import { getStorefrontProduct } from "@/lib/storefront/products";
 
-import { DEFAULT_IMPORT_OPTIONS, suggestMapping, type ImportOptions } from "./import-map";
-import { parseCsv } from "./csv";
+import { DEFAULT_IMPORT_OPTIONS, type ColumnMapping, type ImportOptions } from "./import-map";
 import { previewImport, runImport } from "./import";
 
 /**
@@ -29,9 +28,16 @@ function row(cells: string[]) {
 
 const OPTIONS: ImportOptions = { ...DEFAULT_IMPORT_OPTIONS, defaultStatus: "published" };
 
-function mappingFor(text: string) {
-  return suggestMapping(parseCsv(text).headers);
-}
+// Columns of HEADER, mapped by position.
+const MAP: ColumnMapping = {
+  title: 0,
+  sku: 1,
+  price: 2,
+  stockQuantity: 3,
+  categories: 4,
+  shortInfo: 5,
+  description: 6,
+};
 
 afterAll(async () => {
   const skus = ["A", "B", "C"].map(sku);
@@ -56,7 +62,7 @@ describe("previewImport", () => {
       row([`Import Pad ${suffix}`, sku("B"), "not-a-price", "3", catName, "", ""]),
     ].join("\n");
 
-    const preview = await previewImport(text, mappingFor(text), OPTIONS);
+    const preview = await previewImport(text, MAP, OPTIONS);
 
     expect(preview.totalRows).toBe(2);
     expect(preview.toCreate).toBe(1);
@@ -78,7 +84,7 @@ describe("runImport", () => {
       row(["", sku("C"), "5.00", "1", "", "", ""]), // no name → fails
     ].join("\n");
 
-    const result = await runImport(text, mappingFor(text), OPTIONS, null);
+    const result = await runImport(text, MAP, OPTIONS, null);
 
     expect(result.created).toBe(2);
     expect(result.failed).toBe(1);
@@ -102,7 +108,7 @@ describe("runImport", () => {
       row([`Import Mug ${suffix} v2`, sku("A"), "21.00", "5", catName, "Updated.", ""]),
     ].join("\n");
 
-    const result = await runImport(text, mappingFor(text), OPTIONS, null);
+    const result = await runImport(text, MAP, OPTIONS, null);
 
     expect(result.updated).toBe(1);
     expect(result.created).toBe(0);
@@ -123,7 +129,7 @@ describe("runImport", () => {
       row([`Should not apply`, sku("A"), "999", "1", "", "", ""]),
     ].join("\n");
 
-    const result = await runImport(text, mappingFor(text), { ...OPTIONS, updateExisting: false }, null);
+    const result = await runImport(text, MAP, { ...OPTIONS, updateExisting: false }, null);
 
     expect(result.skipped).toBe(1);
     expect(result.updated).toBe(0);
