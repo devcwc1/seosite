@@ -1,6 +1,6 @@
 import { asc, desc, eq, inArray } from "drizzle-orm";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Plus, Upload } from "lucide-react";
 
 import { StatusChip } from "@/components/ui/status-chip";
 import { buttonVariants } from "@/components/ui/button";
@@ -87,10 +87,16 @@ export default async function ProductsPage() {
           </p>
         </div>
         {canWrite ? (
-          <Link href="/products/new" className={buttonVariants()}>
-            <Plus className="size-4" aria-hidden />
-            New product
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/products/import" className={buttonVariants({ variant: "outline" })}>
+              <Upload className="size-4" aria-hidden />
+              Import
+            </Link>
+            <Link href="/products/new" className={buttonVariants()}>
+              <Plus className="size-4" aria-hidden />
+              New product
+            </Link>
+          </div>
         ) : null}
       </div>
 
