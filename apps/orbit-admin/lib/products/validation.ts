@@ -81,7 +81,7 @@ export const productInputSchema = z.object({
     ),
   sku: z.string().trim().min(1, "SKU is required").max(64),
   status: z.enum(["draft", "published", "archived"]),
-  shortInfo: z.string().trim().max(512),
+  shortInfo: z.string().trim().max(8000),
   description: z.string().trim().max(20000),
   price: z.coerce.number().min(0, "Price must be 0 or more"),
   currency: z.string().trim().toUpperCase().length(3, "Use a 3-letter code"),

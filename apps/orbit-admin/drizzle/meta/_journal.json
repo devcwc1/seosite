@@ -64,6 +64,13 @@
       "when": 1789535525970,
       "tag": "0008_spotty_silhouette",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790148764668,
+      "tag": "0009_colossal_boom_boom",
+      "breakpoints": true
     }
   ]
 }

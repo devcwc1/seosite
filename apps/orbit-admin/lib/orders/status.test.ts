@@ -1,11 +1,18 @@
 import { eq } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
+
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { db, pool } from "@/lib/db";
 import { orders } from "@/lib/db/schema";
+import { createProduct, deleteProduct } from "@/lib/products/mutations";
+import { productInputSchema } from "@/lib/products/validation";
 
 import { createOrder, NEXT_STATUSES, setOrderStatus } from "./mutations";
 
+// A self-contained product fixture, so the test does not depend on seed data.
+const suffix = Date.now().toString(36);
+const slug = `status-test-${suffix}`;
+let productId: string;
 const created: string[] = [];
 
 async function placeOrder() {
@@ -18,7 +25,7 @@ async function placeOrder() {
       city: "Amsterdam",
       country: "NL",
     },
-    items: [{ slug: "orbit-notebook", quantity: 1 }],
+    items: [{ slug, quantity: 1 }],
   });
 
   if (!result.ok) throw new Error(`fixture order failed: ${result.error}`);
@@ -42,10 +49,35 @@ async function statusOf(id: string) {
   return row?.status;
 }
 
+beforeAll(async () => {
+  const result = await createProduct(
+    productInputSchema.parse({
+      title: `Status fixture ${suffix}`,
+      slug,
+      sku: `STATUS-${suffix}`.toUpperCase(),
+      status: "published",
+      shortInfo: "",
+      description: "",
+      price: "9.99",
+      currency: "EUR",
+      inStock: true,
+      stockQuantity: "100",
+      images: [],
+      categories: [],
+      meta: { title: "", description: "", keywords: "" },
+      reviews: [],
+    }),
+    null,
+  );
+  if (!result.ok) throw new Error(`fixture product failed: ${JSON.stringify(result.errors)}`);
+  productId = result.id;
+});
+
 afterAll(async () => {
   for (const id of created) {
     await db.delete(orders).where(eq(orders.id, id));
   }
+  if (productId) await deleteProduct(productId, null);
   await pool.end();
 });
 

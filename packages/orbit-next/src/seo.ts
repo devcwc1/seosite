@@ -114,7 +114,7 @@ export function productJsonLd(
   const description =
     context.description ??
     product.seo.description ??
-    product.shortInfo ??
+    (product.shortInfo ? htmlToPlainText(product.shortInfo, 5000) : undefined) ??
     (product.description ? htmlToPlainText(product.description, 5000) : undefined);
 
   const images = product.images.map((image) => image.url);

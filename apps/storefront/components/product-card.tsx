@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { htmlToPlainText } from "@orbit/next/seo";
 import type { StorefrontProduct } from "@orbit/next";
 
 import { formatPrice, primaryCategory, primaryImage } from "@/lib/orbit";
@@ -52,8 +53,8 @@ export function ProductCard({ product }: { product: StorefrontProduct }) {
         </h2>
 
         {product.shortInfo ? (
-          <p className="mb-lg grow text-body-sm leading-snug text-on-surface-variant">
-            {product.shortInfo}
+          <p className="mb-lg grow text-body-sm leading-snug text-on-surface-variant line-clamp-3">
+            {htmlToPlainText(product.shortInfo, 200)}
           </p>
         ) : (
           <div className="grow" />

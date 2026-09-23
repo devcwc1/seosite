@@ -194,7 +194,8 @@ export const productContent = pgTable(
       .references(() => products.id, { onDelete: "cascade" }),
     title: varchar("title", { length: 255 }).notNull(),
     /** Short teaser / summary line shown on cards. */
-    shortInfo: varchar("short_info", { length: 512 }),
+    // Rich text (sanitised HTML), like description; text, not a short varchar.
+    shortInfo: text("short_info"),
     /** Long-form description (may hold rich text / markdown). */
     description: text("description"),
     images: jsonb("images")

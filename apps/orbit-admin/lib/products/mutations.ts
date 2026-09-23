@@ -61,6 +61,11 @@ function toDescription(input: ProductParsed): string | null {
   return sanitizeRichText(input.description) || null;
 }
 
+/** Short description is rich text too, sanitised on the same boundary. */
+function toShortInfo(input: ProductParsed): string | null {
+  return sanitizeRichText(input.shortInfo) || null;
+}
+
 function toMeta(input: ProductParsed): ProductMeta {
   return toStoredMeta(input.meta);
 }
@@ -100,7 +105,7 @@ function buildSnapshot(
 ): ProductContentSnapshot {
   return {
     title: input.title,
-    shortInfo: input.shortInfo || null,
+    shortInfo: toShortInfo(input),
     description: toDescription(input),
     // Images live in product_media now; the content snapshot no longer carries them.
     images: [],
@@ -165,7 +170,7 @@ export async function createProduct(
       .values({
         productId: product.id,
         title: input.title,
-        shortInfo: input.shortInfo || null,
+        shortInfo: toShortInfo(input),
         description: toDescription(input),
         images: [],
         // Categories live in product_categories now, like images.
@@ -249,7 +254,7 @@ export async function updateProduct(
         .update(productContent)
         .set({
           title: input.title,
-          shortInfo: input.shortInfo || null,
+          shortInfo: toShortInfo(input),
           description: toDescription(input),
           images: [],
           categories: [],
@@ -267,7 +272,7 @@ export async function updateProduct(
         .values({
           productId: id,
           title: input.title,
-          shortInfo: input.shortInfo || null,
+          shortInfo: toShortInfo(input),
           description: toDescription(input),
           images: [],
           categories: [],

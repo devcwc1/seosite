@@ -24,6 +24,8 @@ import {
   seoMetaPayload,
   type SeoMetaValue,
 } from "@/components/seo/seo-meta-fields";
+import { htmlToPlainText } from "@orbit/next/seo";
+
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -326,13 +328,17 @@ export function ProductForm({
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="shortInfo">Short description</Label>
-            <Input
-              id="shortInfo"
+            <Label>Short description</Label>
+            <RichTextEditor
               value={values.shortInfo}
-              onChange={(e) => set("shortInfo", e.target.value)}
-              placeholder="One-line summary shown on cards"
+              onChange={(html) => set("shortInfo", html)}
+              ariaLabel="Short description"
             />
+            <p className="text-xs text-muted-foreground">
+              A brief summary shown on product cards and used as the search
+              snippet. Headings, lists and links are kept; anything else is
+              stripped when the product is saved.
+            </p>
             <FieldError message={errors.shortInfo} />
           </div>
 
@@ -589,7 +595,7 @@ export function ProductForm({
             errors={errors}
             path={`/products/${values.slug || "…"}`}
             fallbackTitle={values.title}
-            fallbackDescription={values.shortInfo}
+            fallbackDescription={htmlToPlainText(values.shortInfo)}
           />
         </CardContent>
       </Card>

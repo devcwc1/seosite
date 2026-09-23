@@ -270,9 +270,12 @@ export default async function ProductPage({
           </p>
 
           {product.shortInfo ? (
-            <p className="mb-lg text-body-lg text-on-surface-variant">
-              {product.shortInfo}
-            </p>
+            /* Rich text from the admin, sanitised on write like the
+               description tab, so it is safe to render as HTML here. */
+            <div
+              className="rich-text mb-lg text-body-lg text-on-surface-variant"
+              dangerouslySetInnerHTML={{ __html: product.shortInfo }}
+            />
           ) : null}
 
           {/* The design's quantity stepper, as a number input: the +/- buttons

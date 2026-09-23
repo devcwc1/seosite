@@ -1,0 +1,1 @@
+ALTER TABLE "product_content" ALTER COLUMN "short_info" SET DATA TYPE text;

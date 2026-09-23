@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import Link from "@tiptap/extension-link";
 import StarterKit from "@tiptap/starter-kit";
@@ -73,9 +73,11 @@ export function formatHtml(html: string): string {
 function HeadingSelect({
   editor,
   disabled,
+  fieldId,
 }: {
   editor: Editor;
   disabled: boolean;
+  fieldId: string;
 }) {
   const active = HEADING_LEVELS.find((level) =>
     editor.isActive("heading", { level }),
@@ -83,7 +85,7 @@ function HeadingSelect({
 
   return (
     <>
-      <label htmlFor="rte-block" className="sr-only">
+      <label htmlFor={`${fieldId}-block`} className="sr-only">
         Text style
       </label>
       {/*
@@ -93,7 +95,7 @@ function HeadingSelect({
         correctly without any of it being reimplemented here.
       */}
       <select
-        id="rte-block"
+        id={`${fieldId}-block`}
         disabled={disabled}
         value={active ? `h${active}` : "p"}
         onChange={(event) => {
@@ -127,6 +129,8 @@ export function RichTextEditor({
   onChange: (html: string) => void;
   ariaLabel?: string;
 }) {
+  // Unique per instance, so two editors on one form do not share element ids.
+  const fieldId = useId();
   const [showSource, setShowSource] = useState(false);
   const [source, setSource] = useState("");
 
@@ -266,7 +270,7 @@ export function RichTextEditor({
   return (
     <div className="flex flex-col gap-2">
       <div className="bg-muted/40 flex flex-wrap items-center gap-1 rounded-md border p-1">
-        <HeadingSelect editor={editor} disabled={showSource} />
+        <HeadingSelect editor={editor} disabled={showSource} fieldId={fieldId} />
 
         <span className="bg-border mx-1 h-5 w-px" aria-hidden />
 
@@ -333,11 +337,11 @@ export function RichTextEditor({
 
       {showSource ? (
         <>
-          <label htmlFor="rte-source" className="sr-only">
+          <label htmlFor={`${fieldId}-source`} className="sr-only">
             {ariaLabel} HTML source
           </label>
           <textarea
-            id="rte-source"
+            id={`${fieldId}-source`}
             value={source}
             spellCheck={false}
             onChange={(event) => {
