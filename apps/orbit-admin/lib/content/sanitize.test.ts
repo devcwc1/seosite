@@ -69,6 +69,21 @@ describe("sanitizeRichText", () => {
     expect(sanitizeRichText("<h7>Nope</h7>")).toBe("Nope");
   });
 
+  it("strips literal backslash-escape artifacts left by CMS exports", () => {
+    // WooCommerce and similar double-escape newlines, so the body carries the
+    // two characters backslash-n as visible text. They must not survive.
+    const bs = String.fromCharCode(92); // a single backslash
+    const out = sanitizeRichText(`<p>Take one.${bs}nThen rest.</p>`);
+    expect(out).not.toContain(`${bs}n`);
+    expect(out).toBe("<p>Take one. Then rest.</p>");
+  });
+
+  it("leaves real content untouched", () => {
+    expect(sanitizeRichText("<p>Winter <strong>sale</strong></p>")).toBe(
+      "<p>Winter <strong>sale</strong></p>",
+    );
+  });
+
   it("normalises every spelling of empty to an empty string", () => {
     for (const empty of ["", "<p></p>", "<p><br></p>", "<p>&nbsp;</p>", "   "]) {
       expect(sanitizeRichText(empty)).toBe("");

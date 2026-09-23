@@ -69,12 +69,25 @@ export function isEmptyRichText(html: string): boolean {
 }
 
 /**
+ * Remove literal escape sequences an export left in the body.
+ *
+ * Some CMS exports double-escape newlines, so the content carries the two
+ * characters backslash-n (and backslash-r / backslash-t) as visible text
+ * instead of a real break, showing up as a stray sequence mid-sentence. The
+ * editor never emits these — it produces real HTML — so they are always an
+ * artifact: each is collapsed to a space, and runs of whitespace tidied to one.
+ */
+function stripEscapeArtifacts(html: string): string {
+  return html.replace(/\\[nrt]/g, ' ').replace(/[ \t]{2,}/g, ' ');
+}
+
+/**
  * Sanitise editor output for storage. Returns an empty string for markup that
  * renders to nothing, so "empty" is one value in the database rather than
  * several spellings of it (`<p></p>`, `<p><br></p>`, whitespace).
  */
 export function sanitizeRichText(html: string): string {
-  const clean = sanitizeHtml(html, OPTIONS).trim();
+  const clean = sanitizeHtml(stripEscapeArtifacts(html), OPTIONS).trim();
   return isEmptyRichText(clean) ? "" : clean;
 }
 
