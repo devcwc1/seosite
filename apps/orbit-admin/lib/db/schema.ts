@@ -87,6 +87,7 @@ export const productStatus = pgEnum("product_status", [
   "published",
   "archived",
 ]);
+export const postStatus = pgEnum("post_status", ["draft", "published", "archived"]);
 
 export type ProductStatus = (typeof productStatus.enumValues)[number];
 
@@ -523,6 +524,42 @@ export const orderStatus = pgEnum("order_status", [
   "cancelled",
 ]);
 
+/* -------------------------------------------------------------------------- */
+/*  Blog                                                                       */
+/* -------------------------------------------------------------------------- */
+
+export const posts = pgTable(
+  "posts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: varchar("slug", { length: 255 }).notNull(),
+    title: varchar("title", { length: 255 }).notNull(),
+    /** Short summary for cards and the meta-description fallback. Plain text. */
+    excerpt: text("excerpt"),
+    /** The article body: sanitised rich text (HTML), like a product description. */
+    body: text("body"),
+    /** Optional lead image, a media_assets row (ORB-501). */
+    coverImageAssetId: uuid("cover_image_asset_id").references(() => mediaAssets.id, {
+      onDelete: "set null",
+    }),
+    status: postStatus("status").notNull().default("draft"),
+    /** Set the first time the post is published; drives ordering and sitemap lastmod. */
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    /** Per-page search/social overrides, same shape as products and categories. */
+    meta: jsonb("meta").$type<ProductMeta>().notNull().default({}),
+    authorId: uuid("author_id").references(() => users.id, { onDelete: "set null" }),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("posts_slug_unique").on(table.slug),
+    index("posts_status_idx").on(table.status),
+    index("posts_published_at_idx").on(table.publishedAt),
+  ],
+);
+
 export const orders = pgTable(
   "orders",
   {
@@ -687,6 +724,14 @@ export const productMediaRelations = relations(productMedia, ({ one }) => ({
   }),
 }));
 
+export const postsRelations = relations(posts, ({ one }) => ({
+  author: one(users, { fields: [posts.authorId], references: [users.id] }),
+  coverImage: one(mediaAssets, {
+    fields: [posts.coverImageAssetId],
+    references: [mediaAssets.id],
+  }),
+}));
+
 export const mediaRelations = relations(media, ({ one }) => ({
   uploadedByUser: one(users, {
     fields: [media.uploadedBy],
@@ -728,3 +773,6 @@ export type NewOrder = typeof orders.$inferInsert;
 export type OrderItem = typeof orderItems.$inferSelect;
 export type NewOrderItem = typeof orderItems.$inferInsert;
 export type OrderStatus = (typeof orderStatus.enumValues)[number];
+export type Post = typeof posts.$inferSelect;
+export type NewPost = typeof posts.$inferInsert;
+export type PostStatus = (typeof postStatus.enumValues)[number];

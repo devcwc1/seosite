@@ -29,6 +29,8 @@ export type MediaUsageDTO = {
     | "gallery"
     | "ogImage"
     | "categoryOgImage"
+    | "postCover"
+    | "postOgImage"
     | "siteDefaultOgImage"
     | "siteLogo";
   /** Product or category id; the settings key for site-wide uses. */

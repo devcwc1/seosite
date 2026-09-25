@@ -20,6 +20,8 @@ const USAGE_LABEL: Record<MediaUsageDTO["kind"], string> = {
   gallery: "Gallery",
   ogImage: "Share image",
   categoryOgImage: "Category share image",
+  postCover: "Blog cover",
+  postOgImage: "Blog share image",
   siteDefaultOgImage: "Default share image",
   siteLogo: "Site logo",
 };

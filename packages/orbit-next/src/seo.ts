@@ -5,7 +5,7 @@
  * Pure functions with no Next.js dependency, so any consumer renders the same
  * output and the rules can be tested without a server.
  */
-import type { StorefrontProduct, StorefrontSite } from "./index";
+import type { StorefrontPost, StorefrontProduct, StorefrontSite } from "./index";
 
 /** Put a page title into the site's template (`%s` is the page title). */
 export function applyTitleTemplate(template: string, title: string): string {
@@ -137,6 +137,33 @@ export function productJsonLd(
         ? "https://schema.org/InStock"
         : "https://schema.org/OutOfStock",
       seller: { "@type": "Organization", name: context.siteName },
+    },
+  };
+}
+
+/** schema.org BlogPosting for an article. */
+export function articleJsonLd(
+  post: StorefrontPost,
+  context: { url: string; siteName: string; logoUrl?: string | null },
+): Record<string, unknown> {
+  const description =
+    post.seo.description ??
+    (post.excerpt ? htmlToPlainText(post.excerpt, 300) : undefined) ??
+    (post.body ? htmlToPlainText(post.body, 300) : undefined);
+  return {
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    headline: post.title,
+    url: context.url,
+    mainEntityOfPage: context.url,
+    ...(description ? { description } : {}),
+    ...(post.coverImageUrl ? { image: [post.coverImageUrl] } : {}),
+    ...(post.publishedAt ? { datePublished: post.publishedAt } : {}),
+    ...(post.updatedAt ? { dateModified: post.updatedAt } : {}),
+    publisher: {
+      "@type": "Organization",
+      name: context.siteName,
+      ...(context.logoUrl ? { logo: { "@type": "ImageObject", url: context.logoUrl } } : {}),
     },
   };
 }

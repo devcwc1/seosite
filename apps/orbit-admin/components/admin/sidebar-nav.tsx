@@ -8,6 +8,7 @@ import {
   Images,
   LayoutDashboard,
   Receipt,
+  FileText,
   Settings,
   Users,
   type LucideIcon,
@@ -24,6 +25,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   media: Images,
   users: Users,
   settings: Settings,
+  blog: FileText,
 };
 
 /**

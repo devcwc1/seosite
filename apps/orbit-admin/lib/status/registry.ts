@@ -36,6 +36,11 @@ const LIVE = {
     published: { tone: "success", label: "Published" },
     archived: { tone: "neutral", label: "Archived" },
   },
+  post: {
+    draft: { tone: "neutral", label: "Draft" },
+    published: { tone: "success", label: "Published" },
+    archived: { tone: "neutral", label: "Archived" },
+  },
   order: {
     pending: { tone: "warning", label: "Pending" },
     paid: { tone: "success", label: "Paid" },

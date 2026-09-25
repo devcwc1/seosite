@@ -71,6 +71,13 @@
       "when": 1790148764668,
       "tag": "0009_colossal_boom_boom",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790319049502,
+      "tag": "0010_tough_santa_claus",
+      "breakpoints": true
     }
   ]
 }

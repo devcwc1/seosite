@@ -43,6 +43,7 @@ function Section({
 
 const DOMAIN_NOTES: Record<StatusDomain, string> = {
   product: "products.status",
+  post: "posts.status",
   order: "orders.status",
   role: "users.role",
   mediaUsage: "computed from product_media + OG references",

@@ -111,6 +111,12 @@ export default async function RootLayout({
                   Catalog
                 </Link>
                 <Link
+                  href="/blog"
+                  className="hidden text-body-md text-on-surface-variant transition-colors hover:text-primary sm:block"
+                >
+                  Blog
+                </Link>
+                <Link
                   href="/cart"
                   aria-label={
                     cartCount === 0

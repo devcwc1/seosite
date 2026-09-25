@@ -103,6 +103,22 @@ export type StorefrontCategory = {
   updatedAt: string;
 };
 
+/** A published blog post as seen by the public storefront. */
+export type StorefrontPost = {
+  slug: string;
+  title: string;
+  excerpt: string | null;
+  /** Sanitised HTML body. */
+  body: string | null;
+  /** Cover image, resolved to an origin the browser can reach. */
+  coverImageUrl: string | null;
+  seo: StorefrontSeo;
+  /** ISO timestamp, or null for a post that has never been published. */
+  publishedAt: string | null;
+  /** ISO timestamp of the last edit, for sitemap `lastmod`. */
+  updatedAt: string;
+};
+
 /**
  * Site-wide search and social settings, controlled from the Orbit admin.
  * Pages use these wherever they have nothing more specific of their own.
@@ -154,6 +170,9 @@ export interface OrbitClient {
   getProduct(slug: string): Promise<StorefrontProduct | null>;
   listCategories(): Promise<StorefrontCategory[]>;
   getCategory(slug: string): Promise<StorefrontCategory | null>;
+  /** Published blog posts, newest first. */
+  listPosts(): Promise<StorefrontPost[]>;
+  getPost(slug: string): Promise<StorefrontPost | null>;
   /** Site-wide search and social settings. */
   getSite(): Promise<StorefrontSite>;
   /**
@@ -308,6 +327,31 @@ export function createOrbitClient(
           `/api/storefront/categories/${encodeURIComponent(slug)}`,
         );
         return withResolvedSeo(category, assetBaseUrl);
+      } catch (error) {
+        if (error instanceof OrbitApiError && error.status === 404) {
+          return null;
+        }
+        throw error;
+      }
+    },
+
+    async listPosts() {
+      const posts = await request<StorefrontPost[]>("/api/storefront/posts");
+      return posts.map((post) => ({
+        ...withResolvedSeo(post, assetBaseUrl),
+        coverImageUrl: resolveAssetUrl(post.coverImageUrl, assetBaseUrl),
+      }));
+    },
+
+    async getPost(slug: string) {
+      try {
+        const post = await request<StorefrontPost>(
+          `/api/storefront/posts/${encodeURIComponent(slug)}`,
+        );
+        return {
+          ...withResolvedSeo(post, assetBaseUrl),
+          coverImageUrl: resolveAssetUrl(post.coverImageUrl, assetBaseUrl),
+        };
       } catch (error) {
         if (error instanceof OrbitApiError && error.status === 404) {
           return null;

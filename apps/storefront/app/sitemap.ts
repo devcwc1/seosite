@@ -17,9 +17,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const site = await getSite();
   if (!site.allowIndexing) return [];
 
-  const [products, categories] = await Promise.all([
+  const [products, categories, posts] = await Promise.all([
     orbit.listProducts().catch(() => []),
     orbit.listCategories().catch(() => []),
+    orbit.listPosts().catch(() => []),
   ]);
 
   // A page whose canonical points elsewhere is, by its own account, not the
@@ -28,7 +29,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     item: T,
   ) => !item.seo.noindex && !item.seo.canonicalUrl;
 
-  const newest = [...products, ...categories]
+  const newest = [...products, ...categories, ...posts]
     .map((item) => item.updatedAt)
     .sort()
     .at(-1);
@@ -42,6 +43,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
     { url: absoluteUrl(site, "/products"), changeFrequency: "daily", priority: 0.8 },
     { url: absoluteUrl(site, "/categories"), changeFrequency: "weekly", priority: 0.6 },
+    { url: absoluteUrl(site, "/blog"), changeFrequency: "weekly", priority: 0.6 },
     ...categories.filter(indexable).map((category) => ({
       url: absoluteUrl(site, `/categories/${category.slug}`),
       lastModified: category.updatedAt,
@@ -53,6 +55,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       lastModified: product.updatedAt,
       changeFrequency: "weekly" as const,
       priority: 0.8,
+    })),
+    ...posts.filter(indexable).map((post) => ({
+      url: absoluteUrl(site, `/blog/${post.slug}`),
+      lastModified: post.updatedAt,
+      changeFrequency: "monthly" as const,
+      priority: 0.6,
     })),
   ];
 }
