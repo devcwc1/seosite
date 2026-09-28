@@ -47,6 +47,7 @@ const DOMAIN_NOTES: Record<StatusDomain, string> = {
   page: "pages.status",
   order: "orders.status",
   role: "users.role",
+  account: "users.status",
   mediaUsage: "computed from product_media + OG references",
   indexing: "no column yet — declared ahead of the SEO feature",
   sync: "no column yet — FR-API-003",

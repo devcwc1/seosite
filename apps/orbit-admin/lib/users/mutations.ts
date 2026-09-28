@@ -1,13 +1,18 @@
 import "server-only";
 
-import { count, eq } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 
 import { recordAudit } from "@/lib/audit";
 import { hashPassword } from "@/lib/auth/password";
 import { db } from "@/lib/db";
 import { sessions, users } from "@/lib/db/schema";
 
-import type { CreateUserParsed, UpdateUserParsed, UserRole } from "./validation";
+import type {
+  CreateUserParsed,
+  UpdateUserParsed,
+  UserAccountStatus,
+  UserRole,
+} from "./validation";
 
 export type UserMutationResult =
   | { ok: true; id: string }
@@ -17,6 +22,7 @@ export type UserListItem = {
   id: string;
   email: string;
   role: UserRole;
+  status: UserAccountStatus;
   mfaEnforced: boolean;
   mfaEnrolled: boolean;
   createdAt: string;
@@ -26,15 +32,20 @@ export type UserEditData = {
   id: string;
   email: string;
   role: UserRole;
+  status: UserAccountStatus;
   mfaEnforced: boolean;
   mfaEnrolled: boolean;
 };
 
-async function countAdmins(): Promise<number> {
+/**
+ * Admins who can actually sign in. A disabled admin cannot rescue a locked-out
+ * system, so it must not count toward the "at least one admin" guarantee.
+ */
+async function countActiveAdmins(): Promise<number> {
   const rows = await db
     .select({ value: count() })
     .from(users)
-    .where(eq(users.role, "admin"));
+    .where(and(eq(users.role, "admin"), eq(users.status, "active")));
   return rows[0]?.value ?? 0;
 }
 
@@ -44,6 +55,7 @@ export async function listUsers(): Promise<UserListItem[]> {
       id: users.id,
       email: users.email,
       role: users.role,
+      status: users.status,
       mfaEnforced: users.mfaEnforced,
       mfaEnrolled: users.mfaEnrolled,
       createdAt: users.createdAt,
@@ -61,6 +73,7 @@ export async function getUserForEdit(id: string): Promise<UserEditData | null> {
     id: u.id,
     email: u.email,
     role: u.role,
+    status: u.status,
     mfaEnforced: u.mfaEnforced,
     mfaEnrolled: u.mfaEnrolled,
   };
@@ -117,22 +130,34 @@ export async function updateUser(
     if (dup) return { ok: false, errors: { email: "Email already in use." } };
   }
 
-  // Never leave the system without an admin.
-  if (target.role === "admin" && input.role !== "admin") {
-    if ((await countAdmins()) <= 1) {
-      return { ok: false, errors: { role: "There must be at least one admin." } };
-    }
+  // Locking yourself out is almost always a mistake and leaves no clean way
+  // back in, so it is refused outright.
+  if (id === actorId && input.status === "disabled") {
+    return { ok: false, errors: { status: "You can't disable your own account." } };
+  }
+
+  // Never leave the system without an admin who can actually sign in. Both
+  // demoting the last active admin and disabling them are blocked here.
+  const wasActiveAdmin = target.role === "admin" && target.status === "active";
+  const willBeActiveAdmin = input.role === "admin" && input.status === "active";
+  if (wasActiveAdmin && !willBeActiveAdmin && (await countActiveAdmins()) <= 1) {
+    return {
+      ok: false,
+      errors: { form: "There must be at least one active admin." },
+    };
   }
 
   const set: {
     email: string;
     role: UserRole;
+    status: UserAccountStatus;
     mfaEnforced: boolean;
     mfaEnrolled?: boolean;
     passwordHash?: string;
   } = {
     email: input.email,
     role: input.role,
+    status: input.status,
     mfaEnforced: input.mfaEnforced,
   };
   if (input.resetMfaEnrollment) set.mfaEnrolled = false;
@@ -141,9 +166,14 @@ export async function updateUser(
 
   await db.update(users).set(set).where(eq(users.id, id));
 
-  // A password change (or forced re-enrol) revokes existing sessions.
-  if (passwordChanged || input.resetMfaEnrollment) {
-    await db.delete(sessions).where(eq(sessions.userId, id));
+  // Anything that should end the user's current access revokes every live
+  // session at once: a new password, a forced MFA re-enrol, or being disabled.
+  const disabling = input.status === "disabled" && target.status === "active";
+  if (passwordChanged || input.resetMfaEnrollment || disabling) {
+    await db
+      .update(sessions)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(sessions.userId, id), isNull(sessions.revokedAt)));
   }
 
   await recordAudit({
@@ -153,8 +183,10 @@ export async function updateUser(
     metadata: {
       email: input.email,
       role: input.role,
+      status: input.status,
       passwordChanged,
       mfaReset: input.resetMfaEnrollment,
+      disabled: disabling,
     },
   });
 
@@ -172,7 +204,7 @@ export async function deleteUser(
   const [target] = await db.select().from(users).where(eq(users.id, id)).limit(1);
   if (!target) return { ok: false, errors: { form: "User not found." } };
 
-  if (target.role === "admin" && (await countAdmins()) <= 1) {
+  if (target.role === "admin" && (await countActiveAdmins()) <= 1) {
     return { ok: false, errors: { form: "Can't delete the last admin." } };
   }
 

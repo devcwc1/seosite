@@ -25,7 +25,7 @@ export default async function EditUserPage({
         <h1 className="text-2xl font-semibold tracking-tight">Edit user</h1>
         <p className="text-sm text-muted-foreground">{user.email}</p>
       </div>
-      <UserForm mode="edit" initial={user} />
+      <UserForm mode="edit" initial={user} isSelf={id === session.user.id} />
     </div>
   );
 }

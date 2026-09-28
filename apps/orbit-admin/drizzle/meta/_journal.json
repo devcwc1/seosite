@@ -85,6 +85,13 @@
       "when": 1790599646949,
       "tag": "0011_blue_nova",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790853647017,
+      "tag": "0012_fresh_moon_knight",
+      "breakpoints": true
     }
   ]
 }

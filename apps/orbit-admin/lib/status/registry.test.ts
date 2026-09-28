@@ -6,6 +6,7 @@ import {
   postStatus,
   productStatus,
   userRole,
+  userStatus,
 } from "@/lib/db/schema";
 
 import {
@@ -43,10 +44,14 @@ describe("the canonical status registry", () => {
     expect(Object.keys(STATUS_REGISTRY.role).sort()).toEqual(
       [...userRole.enumValues].sort(),
     );
+    expect(Object.keys(STATUS_REGISTRY.account).sort()).toEqual(
+      [...userStatus.enumValues].sort(),
+    );
   });
 
   it("names exactly the domains that have a column behind them", () => {
     expect(LIVE_DOMAINS.sort()).toEqual([
+      "account",
       "order",
       "page",
       "post",

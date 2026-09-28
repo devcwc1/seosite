@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export type UserRole = "admin" | "editor" | "viewer";
+export type UserAccountStatus = "active" | "disabled";
 
 export type CreateUserPayload = {
   email: string;
@@ -17,6 +18,8 @@ export type UpdateUserPayload = {
   mfaEnforced: boolean;
   /** Force the user to re-enrol MFA on next sign-in. */
   resetMfaEnrollment: boolean;
+  /** `disabled` blocks sign-in and revokes the user's live sessions. */
+  status: UserAccountStatus;
 };
 
 const email = z
@@ -51,6 +54,7 @@ export const updateUserSchema = z.object({
   role,
   mfaEnforced: z.boolean(),
   resetMfaEnrollment: z.boolean(),
+  status: z.enum(["active", "disabled"]),
 });
 
 export type CreateUserParsed = z.output<typeof createUserSchema>;

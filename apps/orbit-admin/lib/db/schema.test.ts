@@ -25,6 +25,7 @@ describe("db schema", () => {
         "email",
         "password_hash",
         "role",
+        "status",
         "mfa_enforced",
         "mfa_enrolled",
         "created_at",

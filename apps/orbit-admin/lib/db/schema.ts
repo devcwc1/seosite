@@ -82,6 +82,12 @@ export type ProductContentSnapshot = {
 /* -------------------------------------------------------------------------- */
 
 export const userRole = pgEnum("user_role", ["admin", "editor", "viewer"]);
+/**
+ * Whether an account may authenticate at all. `disabled` is checked on every
+ * request (ORB-203): a disabled user's live sessions are revoked and no new
+ * one validates, so access ends without waiting for a cookie to expire.
+ */
+export const userStatus = pgEnum("user_status", ["active", "disabled"]);
 export const productStatus = pgEnum("product_status", [
   "draft",
   "published",
@@ -103,6 +109,8 @@ export const users = pgTable(
     email: varchar("email", { length: 320 }).notNull(),
     passwordHash: text("password_hash").notNull(),
     role: userRole("role").notNull().default("editor"),
+    /** Disabled accounts cannot sign in and have their sessions revoked. */
+    status: userStatus("status").notNull().default("active"),
     /** Org policy requires this user to use MFA. */
     mfaEnforced: boolean("mfa_enforced").notNull().default(false),
     /** This user has completed MFA enrolment (e.g. registered a TOTP factor). */
@@ -134,7 +142,21 @@ export const sessions = pgTable(
     mfaVerified: boolean("mfa_verified").notNull().default(false),
     ipAddress: varchar("ip_address", { length: 45 }),
     userAgent: text("user_agent"),
+    /**
+     * Idle (sliding) expiry: bumped forward on each validated request, never
+     * past `absoluteExpiresAt`. A session idle past this point is rejected.
+     */
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /** Hard cap set once at creation. Activity never moves it (ORB-203). */
+    absoluteExpiresAt: timestamp("absolute_expires_at", {
+      withTimezone: true,
+    }).notNull(),
+    /**
+     * Set when the session is revoked — logout, password change, MFA reset, or
+     * the user being disabled. Non-null means "not valid", authoritatively, in
+     * the DB. Kept rather than deleted so a future session list can show it.
+     */
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -777,6 +799,7 @@ export const mediaRelations = relations(media, ({ one }) => ({
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+export type UserStatusValue = (typeof userStatus.enumValues)[number];
 export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
 export type Product = typeof products.$inferSelect;

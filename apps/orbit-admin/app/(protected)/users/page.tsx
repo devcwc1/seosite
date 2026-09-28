@@ -47,6 +47,7 @@ export default async function UsersPage() {
             <TableRow>
               <TableHead>Email</TableHead>
               <TableHead>Role</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead>MFA</TableHead>
               <TableHead>Created</TableHead>
               <TableHead className="w-0" />
@@ -65,6 +66,13 @@ export default async function UsersPage() {
                 </TableCell>
                 <TableCell>
                   <StatusChip domain="role" value={u.role} />
+                </TableCell>
+                <TableCell>
+                  {u.status === "disabled" ? (
+                    <StatusChip domain="account" value="disabled" />
+                  ) : (
+                    <span className="text-sm text-muted-foreground">Active</span>
+                  )}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {u.mfaEnforced ? "Enforced" : "Optional"} ·{" "}

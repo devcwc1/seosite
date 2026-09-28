@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -25,12 +24,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { UserRole } from "@/lib/users/validation";
+import type { UserAccountStatus, UserRole } from "@/lib/users/validation";
 
 export type UserFormInitial = {
   id: string;
   email: string;
   role: UserRole;
+  status: UserAccountStatus;
   mfaEnforced: boolean;
   mfaEnrolled: boolean;
 };
@@ -43,9 +43,12 @@ function FieldError({ message }: { message?: string }) {
 export function UserForm({
   mode,
   initial,
+  isSelf = false,
 }: {
   mode: "create" | "edit";
   initial?: UserFormInitial;
+  /** True when editing your own account — you cannot disable yourself. */
+  isSelf?: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -58,6 +61,7 @@ export function UserForm({
     role: initial?.role ?? ("editor" as UserRole),
     mfaEnforced: initial?.mfaEnforced ?? true,
     resetMfaEnrollment: false,
+    disabled: initial?.status === "disabled",
   });
 
   function set<K extends keyof typeof values>(
@@ -87,6 +91,7 @@ export function UserForm({
               role: values.role,
               mfaEnforced: values.mfaEnforced,
               resetMfaEnrollment: values.resetMfaEnrollment,
+              status: values.disabled ? "disabled" : "active",
             });
 
       if (result.ok) {
@@ -174,6 +179,26 @@ export function UserForm({
                   (currently {initial?.mfaEnrolled ? "enrolled" : "not enrolled"})
                 </span>
               </Label>
+            </div>
+          ) : null}
+
+          {mode === "edit" ? (
+            <div className="grid gap-2 border-t pt-4">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="disabled"
+                  checked={values.disabled}
+                  disabled={isSelf}
+                  onCheckedChange={(c) => set("disabled", c === true)}
+                />
+                <Label htmlFor="disabled">Disable this account</Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {isSelf
+                  ? "You can't disable your own account."
+                  : "A disabled user can't sign in, and any active sessions are ended immediately."}
+              </p>
+              <FieldError message={errors.status} />
             </div>
           ) : null}
         </CardContent>

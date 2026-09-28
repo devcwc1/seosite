@@ -39,8 +39,8 @@ export async function loginAction(
     return { error: "Invalid email or password." };
   }
 
-  const { token, expiresAt } = await createSession(user.id);
-  await setSessionCookie(token, expiresAt);
+  const { token, cookieExpiresAt } = await createSession(user.id);
+  await setSessionCookie(token, cookieExpiresAt);
   await recordAudit({
     actorId: user.id,
     action: "auth.login",

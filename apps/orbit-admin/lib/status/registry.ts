@@ -57,6 +57,14 @@ const LIVE = {
     editor: { tone: "neutral", label: "Editor" },
     viewer: { tone: "neutral", label: "Viewer" },
   },
+  account: {
+    active: { tone: "success", label: "Active" },
+    disabled: {
+      tone: "danger",
+      label: "Disabled",
+      description: "Cannot sign in; existing sessions revoked",
+    },
+  },
 } as const;
 
 /**
