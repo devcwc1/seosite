@@ -5,6 +5,7 @@ import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   categories,
+  pages,
   posts,
   productContent,
   productMedia,
@@ -29,6 +30,7 @@ export type MediaUsageKind =
   | "categoryOgImage"
   | "postCover"
   | "postOgImage"
+  | "pageOgImage"
   | "siteDefaultOgImage"
   | "siteLogo";
 
@@ -43,7 +45,11 @@ export type MediaUsageRef = {
 
 /** SQL for an asset id held in a jsonb column under the given key. */
 function jsonAssetId(
-  column: typeof productContent.meta | typeof categories.meta | typeof posts.meta,
+  column:
+    | typeof productContent.meta
+    | typeof categories.meta
+    | typeof posts.meta
+    | typeof pages.meta,
   key: string,
 ) {
   return sql<string | null>`${column} ->> ${sql.raw(`'${key}'`)}`;
@@ -52,6 +58,7 @@ function jsonAssetId(
 const PRODUCT_OG = jsonAssetId(productContent.meta, "ogImageAssetId");
 const CATEGORY_OG = jsonAssetId(categories.meta, "ogImageAssetId");
 const POST_OG = jsonAssetId(posts.meta, "ogImageAssetId");
+const PAGE_OG = jsonAssetId(pages.meta, "ogImageAssetId");
 const SITE_DEFAULT_OG = sql<string | null>`${settings.value} ->> 'defaultOgImageAssetId'`;
 const SITE_LOGO = sql<string | null>`${settings.value} ->> 'logoAssetId'`;
 
@@ -63,7 +70,7 @@ const SITE_LOGO = sql<string | null>`${settings.value} ->> 'logoAssetId'`;
  * and what someone deciding whether to delete it needs to see.
  */
 export async function usageForAsset(assetId: string): Promise<MediaUsageRef[]> {
-  const [gallery, productOg, categoryOg, postCover, postOg, site] = await Promise.all([
+  const [gallery, productOg, categoryOg, postCover, postOg, pageOg, site] = await Promise.all([
     db
       .selectDistinct({
         id: products.id,
@@ -95,6 +102,11 @@ export async function usageForAsset(assetId: string): Promise<MediaUsageRef[]> {
       .select({ id: posts.id, title: posts.title })
       .from(posts)
       .where(eq(POST_OG, assetId)),
+
+    db
+      .select({ id: pages.id, title: pages.title })
+      .from(pages)
+      .where(eq(PAGE_OG, assetId)),
 
     db
       .select({ defaultOg: SITE_DEFAULT_OG, logo: SITE_LOGO })
@@ -134,6 +146,12 @@ export async function usageForAsset(assetId: string): Promise<MediaUsageRef[]> {
       targetId: row.id,
       title: row.title,
       href: `/blog/${row.id}/edit`,
+    })),
+    ...pageOg.map((row) => ({
+      kind: "pageOgImage" as const,
+      targetId: row.id,
+      title: row.title,
+      href: `/pages/${row.id}/edit`,
     })),
   ];
 
@@ -177,7 +195,7 @@ export async function usageCounts(
     counts.set(id, (counts.get(id) ?? 0) + n);
   };
 
-  const [gallery, productOg, categoryOg, postCover, postOg, site] = await Promise.all([
+  const [gallery, productOg, categoryOg, postCover, postOg, pageOg, site] = await Promise.all([
     db
       .select({
         assetId: productMedia.mediaAssetId,
@@ -222,6 +240,12 @@ export async function usageCounts(
       .groupBy(POST_OG),
 
     db
+      .select({ assetId: PAGE_OG, n: sql<number>`count(distinct ${pages.id})::int` })
+      .from(pages)
+      .where(inArray(PAGE_OG, assetIds))
+      .groupBy(PAGE_OG),
+
+    db
       .select({ defaultOg: SITE_DEFAULT_OG, logo: SITE_LOGO })
       .from(settings)
       .where(eq(settings.key, SITE_SEO_SETTING_KEY))
@@ -233,6 +257,7 @@ export async function usageCounts(
   for (const row of categoryOg) add(row.assetId, row.n);
   for (const row of postCover) add(row.assetId, row.n);
   for (const row of postOg) add(row.assetId, row.n);
+  for (const row of pageOg) add(row.assetId, row.n);
 
   const wanted = new Set(assetIds);
   const siteRow = site[0];
@@ -250,12 +275,13 @@ export async function usageCounts(
  * EXISTS subquery in the listing itself.
  */
 export async function referencedAssetIds(): Promise<Set<string>> {
-  const [gallery, productOg, categoryOg, postCover, postOg, site] = await Promise.all([
+  const [gallery, productOg, categoryOg, postCover, postOg, pageOg, site] = await Promise.all([
     db.selectDistinct({ id: productMedia.mediaAssetId }).from(productMedia),
     db.selectDistinct({ id: PRODUCT_OG }).from(productContent),
     db.selectDistinct({ id: CATEGORY_OG }).from(categories),
     db.selectDistinct({ id: posts.coverImageAssetId }).from(posts),
     db.selectDistinct({ id: POST_OG }).from(posts),
+    db.selectDistinct({ id: PAGE_OG }).from(pages),
     db
       .select({ defaultOg: SITE_DEFAULT_OG, logo: SITE_LOGO })
       .from(settings)
@@ -269,6 +295,7 @@ export async function referencedAssetIds(): Promise<Set<string>> {
   for (const row of categoryOg) if (row.id) ids.add(row.id);
   for (const row of postCover) if (row.id) ids.add(row.id);
   for (const row of postOg) if (row.id) ids.add(row.id);
+  for (const row of pageOg) if (row.id) ids.add(row.id);
   if (site[0]?.defaultOg) ids.add(site[0].defaultOg);
   if (site[0]?.logo) ids.add(site[0].logo);
   return ids;

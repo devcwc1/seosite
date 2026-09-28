@@ -25,7 +25,8 @@ export type NavIcon =
   | "media"
   | "users"
   | "settings"
-  | "blog";
+  | "blog"
+  | "pages";
 
 export type NavItem = {
   href: string;
@@ -40,6 +41,7 @@ const ALL_ITEMS: readonly NavItem[] = [
   { href: "/products", label: "Products", icon: "products" },
   { href: "/categories", label: "Categories", icon: "categories" },
   { href: "/blog", label: "Blog", icon: "blog" },
+  { href: "/pages", label: "Pages", icon: "pages" },
   { href: "/orders", label: "Orders", icon: "orders" },
   { href: "/media", label: "Media", icon: "media" },
   { href: "/users", label: "Users", icon: "users", adminOnly: true },

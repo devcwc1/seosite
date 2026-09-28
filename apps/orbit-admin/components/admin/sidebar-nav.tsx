@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Boxes,
+  Files,
   FolderTree,
   Images,
   LayoutDashboard,
@@ -26,6 +27,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   users: Users,
   settings: Settings,
   blog: FileText,
+  pages: Files,
 };
 
 /**

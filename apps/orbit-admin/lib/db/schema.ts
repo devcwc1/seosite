@@ -88,6 +88,7 @@ export const productStatus = pgEnum("product_status", [
   "archived",
 ]);
 export const postStatus = pgEnum("post_status", ["draft", "published", "archived"]);
+export const pageStatus = pgEnum("page_status", ["draft", "published", "archived"]);
 
 export type ProductStatus = (typeof productStatus.enumValues)[number];
 
@@ -560,6 +561,37 @@ export const posts = pgTable(
   ],
 );
 
+/* -------------------------------------------------------------------------- */
+/*  Pages (standalone CMS pages)                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Free-standing content pages — About, Contact, terms, landing pages — each
+ * addressed by its own slug. The stored content is sanitised rich text; how a
+ * given page is laid out on the storefront is a separate, per-page design.
+ */
+export const pages = pgTable(
+  "pages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: varchar("slug", { length: 255 }).notNull(),
+    title: varchar("title", { length: 255 }).notNull(),
+    /** The page body: sanitised rich text (HTML), like a product description. */
+    content: text("content"),
+    status: pageStatus("status").notNull().default("draft"),
+    /** Per-page search/social overrides, same shape as products and posts. */
+    meta: jsonb("meta").$type<ProductMeta>().notNull().default({}),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("pages_slug_unique").on(table.slug),
+    index("pages_status_idx").on(table.status),
+  ],
+);
+
 export const orders = pgTable(
   "orders",
   {
@@ -776,3 +808,6 @@ export type OrderStatus = (typeof orderStatus.enumValues)[number];
 export type Post = typeof posts.$inferSelect;
 export type NewPost = typeof posts.$inferInsert;
 export type PostStatus = (typeof postStatus.enumValues)[number];
+export type Page = typeof pages.$inferSelect;
+export type NewPage = typeof pages.$inferInsert;
+export type PageStatus = (typeof pageStatus.enumValues)[number];

@@ -20,6 +20,7 @@ describe("role-aware navigation", () => {
       "/products",
       "/categories",
       "/blog",
+      "/pages",
       "/orders",
       "/media",
       "/users",
@@ -37,7 +38,7 @@ describe("role-aware navigation", () => {
 
   it("still shows an editor everything that is not admin-only", () => {
     // The point is to remove exactly the unusable links and nothing else.
-    for (const href of ["/dashboard", "/products", "/categories", "/blog", "/orders", "/media"]) {
+    for (const href of ["/dashboard", "/products", "/categories", "/blog", "/pages", "/orders", "/media"]) {
       expect(hrefs("editor")).toContain(href);
     }
   });

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { orderStatus, postStatus, productStatus, userRole } from "@/lib/db/schema";
+import {
+  orderStatus,
+  pageStatus,
+  postStatus,
+  productStatus,
+  userRole,
+} from "@/lib/db/schema";
 
 import {
   LIVE_DOMAINS,
@@ -28,6 +34,9 @@ describe("the canonical status registry", () => {
     expect(Object.keys(STATUS_REGISTRY.post).sort()).toEqual(
       [...postStatus.enumValues].sort(),
     );
+    expect(Object.keys(STATUS_REGISTRY.page).sort()).toEqual(
+      [...pageStatus.enumValues].sort(),
+    );
     expect(Object.keys(STATUS_REGISTRY.order).sort()).toEqual(
       [...orderStatus.enumValues].sort(),
     );
@@ -37,7 +46,13 @@ describe("the canonical status registry", () => {
   });
 
   it("names exactly the domains that have a column behind them", () => {
-    expect(LIVE_DOMAINS.sort()).toEqual(["order", "post", "product", "role"]);
+    expect(LIVE_DOMAINS.sort()).toEqual([
+      "order",
+      "page",
+      "post",
+      "product",
+      "role",
+    ]);
   });
 
   it("uses only the five sanctioned tones", () => {
