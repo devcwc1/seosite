@@ -1,5 +1,6 @@
 "use client";
 
+import { Banner } from "@/components/ui/banner";
 import { MediaPicker } from "@/components/media/media-picker";
 import { MediaThumb } from "@/components/media/media-thumb";
 import { Button } from "@/components/ui/button";
@@ -7,6 +8,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  META_DESCRIPTION_LIMIT,
+  META_DESCRIPTION_MAX,
+  META_TITLE_LIMIT,
+  META_TITLE_MAX,
+  seoPublishWarnings,
+} from "@/lib/seo/meta";
 import { cn } from "@/lib/utils";
 
 /**
@@ -18,11 +26,12 @@ import { cn } from "@/lib/utils";
  *
  * Lengths are guidance, not limits. A search engine truncates a long title in
  * its results; it does not reject the page. So the counters warn past the
- * recommended length instead of stopping the editor typing.
+ * recommended length instead of stopping the editor typing — and only past a
+ * much higher hard cap does the field actually refuse to save (ORB-601).
+ *
+ * The limits come from the shared schema module, so the counter and the
+ * server-side validation can never disagree about what "too long" means.
  */
-
-const TITLE_RECOMMENDED = 60;
-const DESCRIPTION_RECOMMENDED = 160;
 
 export type SeoMetaValue = {
   title: string;
@@ -75,22 +84,34 @@ function LengthHint({
   id,
   length,
   recommended,
+  hardCap,
 }: {
   id: string;
   length: number;
   recommended: number;
+  /** Past this the field is rejected on save; the hint says so. */
+  hardCap: number;
 }) {
+  const overCap = length > hardCap;
   const over = length > recommended;
   return (
     <p
       id={id}
       className={cn(
         "text-caption tabular-nums",
-        over ? "text-status-warning-foreground" : "text-muted-foreground",
+        overCap
+          ? "text-status-danger-foreground font-medium"
+          : over
+            ? "text-status-warning-foreground"
+            : "text-muted-foreground",
       )}
     >
       {length} of {recommended} recommended characters
-      {over ? " — search results will cut this short" : ""}
+      {overCap
+        ? ` — over the ${hardCap}-character limit`
+        : over
+          ? " — search results will cut this short"
+          : ""}
     </p>
   );
 }
@@ -103,6 +124,7 @@ export function SeoMetaFields({
   path,
   fallbackTitle,
   fallbackDescription,
+  publishing = false,
 }: {
   /** Keeps ids unique if two sets ever share a page. */
   idPrefix: string;
@@ -115,11 +137,20 @@ export function SeoMetaFields({
   /** What the storefront shows when the editor leaves the field blank. */
   fallbackTitle: string;
   fallbackDescription: string;
+  /**
+   * True when the page is set to publish. Turns on the pre-publish summary,
+   * which lists the metadata fields left empty (ORB-601). Empty is fine while
+   * drafting; at publish it is surfaced, never blocked.
+   */
+  publishing?: boolean;
 }) {
   const id = (name: string) => `${idPrefix}-${name}`;
   const previewTitle = value.title || fallbackTitle || "Untitled";
   const previewDescription =
     value.description || fallbackDescription || "No description yet.";
+  const publishWarnings = publishing
+    ? seoPublishWarnings({ title: value.title, description: value.description })
+    : [];
 
   function Error({ field }: { field: string }) {
     const message = errors[`meta.${field}`];
@@ -128,6 +159,20 @@ export function SeoMetaFields({
 
   return (
     <div className="grid gap-5">
+      {/*
+        Surfaced only when publishing: the fields left empty. Advisory, so a
+        warning tone and never a blocker — the editor can still publish.
+      */}
+      {publishWarnings.length > 0 ? (
+        <Banner tone="warning" title="Before you publish">
+          <ul className="ml-4 list-disc space-y-0.5">
+            {publishWarnings.map((warning) => (
+              <li key={warning.field}>{warning.message}</li>
+            ))}
+          </ul>
+        </Banner>
+      ) : null}
+
       {/*
         A preview of the search result. It is approximate by nature — engines
         rewrite titles and snippets as they see fit — but it shows what the
@@ -164,8 +209,9 @@ export function SeoMetaFields({
         />
         <LengthHint
           id={id("title-hint")}
-          length={(value.title || fallbackTitle).length}
-          recommended={TITLE_RECOMMENDED}
+          length={value.title.length}
+          recommended={META_TITLE_LIMIT}
+          hardCap={META_TITLE_MAX}
         />
         <Error field="title" />
       </div>
@@ -182,8 +228,9 @@ export function SeoMetaFields({
         />
         <LengthHint
           id={id("description-hint")}
-          length={(value.description || fallbackDescription).length}
-          recommended={DESCRIPTION_RECOMMENDED}
+          length={value.description.length}
+          recommended={META_DESCRIPTION_LIMIT}
+          hardCap={META_DESCRIPTION_MAX}
         />
         <Error field="description" />
       </div>

@@ -295,6 +295,7 @@ export function PostForm({
             path={`/blog/${values.slug || "…"}`}
             fallbackTitle={values.title}
             fallbackDescription={values.excerpt}
+            publishing={values.status === "published"}
           />
         </CardContent>
       </Card>

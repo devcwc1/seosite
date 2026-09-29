@@ -596,6 +596,7 @@ export function ProductForm({
             path={`/products/${values.slug || "…"}`}
             fallbackTitle={values.title}
             fallbackDescription={htmlToPlainText(values.shortInfo)}
+            publishing={values.status === "published"}
           />
         </CardContent>
       </Card>
