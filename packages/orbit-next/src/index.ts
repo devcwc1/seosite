@@ -119,6 +119,17 @@ export type StorefrontPost = {
   updatedAt: string;
 };
 
+/** A published standalone content page as seen by the public storefront. */
+export type StorefrontPage = {
+  slug: string;
+  title: string;
+  /** Sanitised HTML content. */
+  content: string | null;
+  seo: StorefrontSeo;
+  /** ISO timestamp of the last edit, for sitemap `lastmod`. */
+  updatedAt: string;
+};
+
 /**
  * Site-wide search and social settings, controlled from the Orbit admin.
  * Pages use these wherever they have nothing more specific of their own.
@@ -173,6 +184,9 @@ export interface OrbitClient {
   /** Published blog posts, newest first. */
   listPosts(): Promise<StorefrontPost[]>;
   getPost(slug: string): Promise<StorefrontPost | null>;
+  /** Published standalone content pages. */
+  listPages(): Promise<StorefrontPage[]>;
+  getPage(slug: string): Promise<StorefrontPage | null>;
   /** Site-wide search and social settings. */
   getSite(): Promise<StorefrontSite>;
   /**
@@ -352,6 +366,25 @@ export function createOrbitClient(
           ...withResolvedSeo(post, assetBaseUrl),
           coverImageUrl: resolveAssetUrl(post.coverImageUrl, assetBaseUrl),
         };
+      } catch (error) {
+        if (error instanceof OrbitApiError && error.status === 404) {
+          return null;
+        }
+        throw error;
+      }
+    },
+
+    async listPages() {
+      const pages = await request<StorefrontPage[]>("/api/storefront/pages");
+      return pages.map((page) => withResolvedSeo(page, assetBaseUrl));
+    },
+
+    async getPage(slug: string) {
+      try {
+        const page = await request<StorefrontPage>(
+          `/api/storefront/pages/${encodeURIComponent(slug)}`,
+        );
+        return withResolvedSeo(page, assetBaseUrl);
       } catch (error) {
         if (error instanceof OrbitApiError && error.status === 404) {
           return null;

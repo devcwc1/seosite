@@ -17,10 +17,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const site = await getSite();
   if (!site.allowIndexing) return [];
 
-  const [products, categories, posts] = await Promise.all([
+  const [products, categories, posts, pages] = await Promise.all([
     orbit.listProducts().catch(() => []),
     orbit.listCategories().catch(() => []),
     orbit.listPosts().catch(() => []),
+    orbit.listPages().catch(() => []),
   ]);
 
   // A page whose canonical points elsewhere is, by its own account, not the
@@ -61,6 +62,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       lastModified: post.updatedAt,
       changeFrequency: "monthly" as const,
       priority: 0.6,
+    })),
+    ...pages.filter(indexable).map((page) => ({
+      url: absoluteUrl(site, `/${page.slug}`),
+      lastModified: page.updatedAt,
+      changeFrequency: "monthly" as const,
+      priority: 0.5,
     })),
   ];
 }
