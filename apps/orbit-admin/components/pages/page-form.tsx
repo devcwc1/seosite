@@ -212,6 +212,7 @@ export function PageForm({
             path={`/${values.slug || "…"}`}
             fallbackTitle={values.title}
             fallbackDescription=""
+            publishing={values.status === "published"}
           />
         </CardContent>
       </Card>
