@@ -81,11 +81,16 @@ export default async function RootLayout({
 
   const cartCount = countItems(await readCart());
 
+  // suppressHydrationWarning on <html>/<body>: browser extensions (Grammarly,
+  // dark-reader, password managers) inject attributes onto these tags after the
+  // server HTML is sent, which React otherwise reports as a hydration mismatch.
+  // It only suppresses attribute warnings on these two elements, not the tree.
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
       <body
         id="top"
         className="flex min-h-screen flex-col bg-background text-body-md text-on-surface"
+        suppressHydrationWarning
       >
         <header className="sticky top-0 z-50 border-b border-outline-variant bg-surface">
           <div className="shell flex flex-col gap-sm py-sm">
