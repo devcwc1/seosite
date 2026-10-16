@@ -1,15 +1,14 @@
-import { eq, inArray } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { db, pool } from "@/lib/db";
-import { pages } from "@/lib/db/schema";
+import { pagesCollection } from "@/lib/db/mongo-collections";
 
 import { createPage, deletePage, getPageForEdit, listPages, updatePage } from "./mutations";
 import { pageInputSchema, type PageParsed } from "./validation";
 
 /**
- * Integration against a real Postgres: slug uniqueness and content
- * sanitisation are the parts a mock would get wrong.
+ * Integration against MongoDB: slug uniqueness and content sanitisation are the
+ * parts a mock would get wrong. The shared Mongo client is closed by
+ * test/setup.ts.
  */
 
 const suffix = Date.now().toString(36);
@@ -34,8 +33,9 @@ async function create(over: Partial<Record<string, unknown>> = {}): Promise<stri
 }
 
 afterAll(async () => {
-  if (createdIds.length) await db.delete(pages).where(inArray(pages.id, createdIds));
-  await pool.end();
+  if (createdIds.length) {
+    await pagesCollection().deleteMany({ _id: { $in: createdIds } });
+  }
 });
 
 describe("page mutations", () => {
@@ -85,7 +85,7 @@ describe("page mutations", () => {
     expect((await listPages()).some((p) => p.id === id)).toBe(true);
 
     await deletePage(id, null);
-    const [gone] = await db.select().from(pages).where(eq(pages.id, id));
-    expect(gone).toBeUndefined();
+    const gone = await pagesCollection().findOne({ _id: id });
+    expect(gone).toBeNull();
   });
 });

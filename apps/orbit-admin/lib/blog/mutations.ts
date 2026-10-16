@@ -1,22 +1,29 @@
 import "server-only";
 
-import { and, desc, eq, ne } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+
+import { eq } from "drizzle-orm";
 
 import { recordAudit } from "@/lib/audit";
 import { sanitizeRichText } from "@/lib/content/sanitize";
 import { db } from "@/lib/db";
-import { posts, type Post, type PostStatus, type ProductMeta } from "@/lib/db/schema";
+import { postsCollection, type PostDoc } from "@/lib/db/mongo-collections";
+import { mediaAssets, type PostStatus, type ProductMeta } from "@/lib/db/schema";
 import { assetUrl } from "@/lib/media/assets";
 import { toStoredMeta } from "@/lib/seo/meta";
-import { mediaAssets } from "@/lib/db/schema";
 
 import type { PostParsed } from "./validation";
+
+/**
+ * Posts live in MongoDB (migration in progress). Media assets are still read
+ * from Postgres to resolve the cover-image URL for the edit form.
+ */
 
 export type MutationResult =
   | { ok: true; id: string }
   | { ok: false; errors: Record<string, string> };
 
-/** A post row plus the resolved cover-image URL, shaped for the edit form. */
+/** A post plus the resolved cover-image URL, shaped for the edit form. */
 export type PostEditData = {
   id: string;
   title: string;
@@ -46,12 +53,11 @@ function toBody(input: PostParsed): string | null {
 }
 
 async function slugTaken(slug: string, excludeId: string | null): Promise<boolean> {
-  const [row] = await db
-    .select({ id: posts.id })
-    .from(posts)
-    .where(excludeId ? and(eq(posts.slug, slug), ne(posts.id, excludeId)) : eq(posts.slug, slug))
-    .limit(1);
-  return row !== undefined;
+  const row = await postsCollection().findOne(
+    excludeId ? { slug, _id: { $ne: excludeId } } : { slug },
+    { projection: { _id: 1 } },
+  );
+  return row !== null;
 }
 
 /**
@@ -77,32 +83,38 @@ export async function createPost(
     return { ok: false, errors: { slug: "This slug is already in use." } };
   }
 
-  const [row] = await db
-    .insert(posts)
-    .values({
-      slug: input.slug,
-      title: input.title,
-      excerpt: input.excerpt || null,
-      body: toBody(input),
-      coverImageAssetId: input.coverImageAssetId || null,
-      status: input.status,
-      publishedAt: resolvePublishedAt(input, input.status, null),
-      meta: toStoredMeta(input.meta),
-      authorId: actorId,
-      createdBy: actorId,
-      updatedBy: actorId,
-    })
-    .returning({ id: posts.id });
-  if (!row) return { ok: false, errors: { form: "Could not create the post." } };
+  const now = new Date();
+  const doc: PostDoc = {
+    _id: randomUUID(),
+    slug: input.slug,
+    title: input.title,
+    excerpt: input.excerpt || null,
+    body: toBody(input),
+    coverImageAssetId: input.coverImageAssetId || null,
+    status: input.status,
+    publishedAt: resolvePublishedAt(input, input.status, null),
+    meta: toStoredMeta(input.meta),
+    authorId: actorId,
+    createdBy: actorId,
+    updatedBy: actorId,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  try {
+    await postsCollection().insertOne(doc);
+  } catch {
+    return { ok: false, errors: { form: "Could not create the post." } };
+  }
 
   await recordAudit({
     actorId,
     action: "post.created",
-    target: `post:${row.id}`,
+    target: `post:${doc._id}`,
     metadata: { slug: input.slug, status: input.status },
   });
 
-  return { ok: true, id: row.id };
+  return { ok: true, id: doc._id };
 }
 
 export async function updatePost(
@@ -110,28 +122,30 @@ export async function updatePost(
   input: PostParsed,
   actorId: string | null,
 ): Promise<MutationResult> {
-  const [existing] = await db.select().from(posts).where(eq(posts.id, id)).limit(1);
+  const existing = await postsCollection().findOne({ _id: id });
   if (!existing) return { ok: false, errors: { form: "Post not found." } };
 
   if (await slugTaken(input.slug, id)) {
     return { ok: false, errors: { slug: "This slug is already in use." } };
   }
 
-  await db
-    .update(posts)
-    .set({
-      slug: input.slug,
-      title: input.title,
-      excerpt: input.excerpt || null,
-      body: toBody(input),
-      coverImageAssetId: input.coverImageAssetId || null,
-      status: input.status,
-      publishedAt: resolvePublishedAt(input, input.status, existing.publishedAt),
-      meta: toStoredMeta(input.meta),
-      updatedBy: actorId,
-      updatedAt: new Date(),
-    })
-    .where(eq(posts.id, id));
+  await postsCollection().updateOne(
+    { _id: id },
+    {
+      $set: {
+        slug: input.slug,
+        title: input.title,
+        excerpt: input.excerpt || null,
+        body: toBody(input),
+        coverImageAssetId: input.coverImageAssetId || null,
+        status: input.status,
+        publishedAt: resolvePublishedAt(input, input.status, existing.publishedAt),
+        meta: toStoredMeta(input.meta),
+        updatedBy: actorId,
+        updatedAt: new Date(),
+      },
+    },
+  );
 
   await recordAudit({
     actorId,
@@ -147,14 +161,13 @@ export async function deletePost(
   id: string,
   actorId: string | null,
 ): Promise<MutationResult> {
-  const [existing] = await db
-    .select({ slug: posts.slug })
-    .from(posts)
-    .where(eq(posts.id, id))
-    .limit(1);
+  const existing = await postsCollection().findOne(
+    { _id: id },
+    { projection: { slug: 1 } },
+  );
   if (!existing) return { ok: false, errors: { form: "Post not found." } };
 
-  await db.delete(posts).where(eq(posts.id, id));
+  await postsCollection().deleteOne({ _id: id });
 
   await recordAudit({
     actorId,
@@ -166,20 +179,20 @@ export async function deletePost(
   return { ok: true, id };
 }
 
-/** Newest first: published by publish date, drafts by last edit. */
+/** Newest first by last edit. */
 export async function listPosts(): Promise<PostListItem[]> {
-  const rows = await db
-    .select({
-      id: posts.id,
-      title: posts.title,
-      slug: posts.slug,
-      status: posts.status,
-      publishedAt: posts.publishedAt,
-      updatedAt: posts.updatedAt,
-    })
-    .from(posts)
-    .orderBy(desc(posts.updatedAt));
-  return rows;
+  const docs = await postsCollection()
+    .find({}, { projection: { title: 1, slug: 1, status: 1, publishedAt: 1, updatedAt: 1 } })
+    .sort({ updatedAt: -1 })
+    .toArray();
+  return docs.map((doc) => ({
+    id: doc._id,
+    title: doc.title,
+    slug: doc.slug,
+    status: doc.status,
+    publishedAt: doc.publishedAt,
+    updatedAt: doc.updatedAt,
+  }));
 }
 
 function toIsoDate(date: Date | null): string {
@@ -187,7 +200,7 @@ function toIsoDate(date: Date | null): string {
 }
 
 export async function getPostForEdit(id: string): Promise<PostEditData | null> {
-  const [post] = await db.select().from(posts).where(eq(posts.id, id)).limit(1);
+  const post = await postsCollection().findOne({ _id: id });
   if (!post) return null;
 
   let coverImageUrl = "";
@@ -201,7 +214,7 @@ export async function getPostForEdit(id: string): Promise<PostEditData | null> {
   }
 
   return {
-    id: post.id,
+    id: post._id,
     title: post.title,
     slug: post.slug,
     status: post.status,
@@ -214,7 +227,10 @@ export async function getPostForEdit(id: string): Promise<PostEditData | null> {
   };
 }
 
-/** For the media library's usage view later, if wired: does a post use an asset? */
-export function isPostCover(post: Pick<Post, "coverImageAssetId">, assetId: string): boolean {
+/** Does a post use an asset as its cover? (For media-usage.) */
+export function isPostCover(
+  post: { coverImageAssetId: string | null },
+  assetId: string,
+): boolean {
   return post.coverImageAssetId === assetId;
 }

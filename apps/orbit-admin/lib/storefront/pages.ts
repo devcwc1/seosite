@@ -1,10 +1,8 @@
 import "server-only";
 
-import { and, desc, eq } from "drizzle-orm";
 import type { StorefrontPage } from "@orbit/next";
 
-import { db } from "@/lib/db";
-import { pages, type Page } from "@/lib/db/schema";
+import { pagesCollection, type PageDoc } from "@/lib/db/mongo-collections";
 
 import { assetUrlsById } from "./assets";
 import { toStorefrontSeo } from "./mapper";
@@ -13,11 +11,11 @@ import { toStorefrontSeo } from "./mapper";
  * Read model behind the public pages API.
  *
  * Only published pages are served; a draft or archived page has no public URL,
- * exactly like an unpublished product or post.
+ * exactly like an unpublished product or post. Pages live in MongoDB; media
+ * assets are still resolved from Postgres.
  */
-const publishedOnly = eq(pages.status, "published");
 
-async function toDtos(rows: Page[]): Promise<StorefrontPage[]> {
+async function toDtos(rows: PageDoc[]): Promise<StorefrontPage[]> {
   const ogUrls = await assetUrlsById(rows.map((row) => row.meta?.ogImageAssetId));
   return rows.map((row) => {
     const ogId = row.meta?.ogImageAssetId;
@@ -32,21 +30,16 @@ async function toDtos(rows: Page[]): Promise<StorefrontPage[]> {
 }
 
 export async function listStorefrontPages(): Promise<StorefrontPage[]> {
-  const rows = await db
-    .select()
-    .from(pages)
-    .where(publishedOnly)
-    .orderBy(desc(pages.updatedAt));
+  const rows = await pagesCollection()
+    .find({ status: "published" })
+    .sort({ updatedAt: -1 })
+    .toArray();
   return toDtos(rows);
 }
 
 export async function getStorefrontPage(slug: string): Promise<StorefrontPage | null> {
-  const rows = await db
-    .select()
-    .from(pages)
-    .where(and(eq(pages.slug, slug), publishedOnly))
-    .limit(1);
-  if (rows.length === 0) return null;
-  const [dto] = await toDtos(rows);
+  const row = await pagesCollection().findOne({ slug, status: "published" });
+  if (!row) return null;
+  const [dto] = await toDtos([row]);
   return dto ?? null;
 }

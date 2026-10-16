@@ -1,21 +1,29 @@
 import "server-only";
 
-import { and, desc, eq, ne } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+
+import { eq } from "drizzle-orm";
 
 import { recordAudit } from "@/lib/audit";
 import { sanitizeRichText } from "@/lib/content/sanitize";
 import { db } from "@/lib/db";
-import { mediaAssets, pages, type PageStatus, type ProductMeta } from "@/lib/db/schema";
+import { pagesCollection, type PageDoc } from "@/lib/db/mongo-collections";
+import { mediaAssets, type PageStatus, type ProductMeta } from "@/lib/db/schema";
 import { assetUrl } from "@/lib/media/assets";
 import { toStoredMeta } from "@/lib/seo/meta";
 
 import type { PageParsed } from "./validation";
 
+/**
+ * Pages live in MongoDB (migration in progress). Media assets are still read
+ * from Postgres to resolve the OG-image URL for the edit form.
+ */
+
 export type MutationResult =
   | { ok: true; id: string }
   | { ok: false; errors: Record<string, string> };
 
-/** A page row shaped for the edit form, with the OG image URL resolved. */
+/** A page plus the resolved OG-image URL, shaped for the edit form. */
 export type PageEditData = {
   id: string;
   title: string;
@@ -41,12 +49,11 @@ function toContent(input: PageParsed): string | null {
 }
 
 async function slugTaken(slug: string, excludeId: string | null): Promise<boolean> {
-  const [row] = await db
-    .select({ id: pages.id })
-    .from(pages)
-    .where(excludeId ? and(eq(pages.slug, slug), ne(pages.id, excludeId)) : eq(pages.slug, slug))
-    .limit(1);
-  return row !== undefined;
+  const row = await pagesCollection().findOne(
+    excludeId ? { slug, _id: { $ne: excludeId } } : { slug },
+    { projection: { _id: 1 } },
+  );
+  return row !== null;
 }
 
 export async function createPage(
@@ -57,28 +64,34 @@ export async function createPage(
     return { ok: false, errors: { slug: "This slug is already in use." } };
   }
 
-  const [row] = await db
-    .insert(pages)
-    .values({
-      slug: input.slug,
-      title: input.title,
-      content: toContent(input),
-      status: input.status,
-      meta: toStoredMeta(input.meta),
-      createdBy: actorId,
-      updatedBy: actorId,
-    })
-    .returning({ id: pages.id });
-  if (!row) return { ok: false, errors: { form: "Could not create the page." } };
+  const now = new Date();
+  const doc: PageDoc = {
+    _id: randomUUID(),
+    slug: input.slug,
+    title: input.title,
+    content: toContent(input),
+    status: input.status,
+    meta: toStoredMeta(input.meta),
+    createdBy: actorId,
+    updatedBy: actorId,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  try {
+    await pagesCollection().insertOne(doc);
+  } catch {
+    return { ok: false, errors: { form: "Could not create the page." } };
+  }
 
   await recordAudit({
     actorId,
     action: "page.created",
-    target: `page:${row.id}`,
+    target: `page:${doc._id}`,
     metadata: { slug: input.slug, status: input.status },
   });
 
-  return { ok: true, id: row.id };
+  return { ok: true, id: doc._id };
 }
 
 export async function updatePage(
@@ -86,25 +99,30 @@ export async function updatePage(
   input: PageParsed,
   actorId: string | null,
 ): Promise<MutationResult> {
-  const [existing] = await db.select().from(pages).where(eq(pages.id, id)).limit(1);
+  const existing = await pagesCollection().findOne(
+    { _id: id },
+    { projection: { _id: 1 } },
+  );
   if (!existing) return { ok: false, errors: { form: "Page not found." } };
 
   if (await slugTaken(input.slug, id)) {
     return { ok: false, errors: { slug: "This slug is already in use." } };
   }
 
-  await db
-    .update(pages)
-    .set({
-      slug: input.slug,
-      title: input.title,
-      content: toContent(input),
-      status: input.status,
-      meta: toStoredMeta(input.meta),
-      updatedBy: actorId,
-      updatedAt: new Date(),
-    })
-    .where(eq(pages.id, id));
+  await pagesCollection().updateOne(
+    { _id: id },
+    {
+      $set: {
+        slug: input.slug,
+        title: input.title,
+        content: toContent(input),
+        status: input.status,
+        meta: toStoredMeta(input.meta),
+        updatedBy: actorId,
+        updatedAt: new Date(),
+      },
+    },
+  );
 
   await recordAudit({
     actorId,
@@ -120,14 +138,13 @@ export async function deletePage(
   id: string,
   actorId: string | null,
 ): Promise<MutationResult> {
-  const [existing] = await db
-    .select({ slug: pages.slug })
-    .from(pages)
-    .where(eq(pages.id, id))
-    .limit(1);
+  const existing = await pagesCollection().findOne(
+    { _id: id },
+    { projection: { slug: 1 } },
+  );
   if (!existing) return { ok: false, errors: { form: "Page not found." } };
 
-  await db.delete(pages).where(eq(pages.id, id));
+  await pagesCollection().deleteOne({ _id: id });
 
   await recordAudit({
     actorId,
@@ -141,20 +158,21 @@ export async function deletePage(
 
 /** Newest edit first. */
 export async function listPages(): Promise<PageListItem[]> {
-  return db
-    .select({
-      id: pages.id,
-      title: pages.title,
-      slug: pages.slug,
-      status: pages.status,
-      updatedAt: pages.updatedAt,
-    })
-    .from(pages)
-    .orderBy(desc(pages.updatedAt));
+  const docs = await pagesCollection()
+    .find({}, { projection: { title: 1, slug: 1, status: 1, updatedAt: 1 } })
+    .sort({ updatedAt: -1 })
+    .toArray();
+  return docs.map((doc) => ({
+    id: doc._id,
+    title: doc.title,
+    slug: doc.slug,
+    status: doc.status,
+    updatedAt: doc.updatedAt,
+  }));
 }
 
 export async function getPageForEdit(id: string): Promise<PageEditData | null> {
-  const [page] = await db.select().from(pages).where(eq(pages.id, id)).limit(1);
+  const page = await pagesCollection().findOne({ _id: id });
   if (!page) return null;
 
   let ogImageUrl = "";
@@ -169,7 +187,7 @@ export async function getPageForEdit(id: string): Promise<PageEditData | null> {
   }
 
   return {
-    id: page.id,
+    id: page._id,
     title: page.title,
     slug: page.slug,
     status: page.status,

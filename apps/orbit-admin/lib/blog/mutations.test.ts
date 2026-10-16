@@ -1,15 +1,14 @@
-import { eq, inArray } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { db, pool } from "@/lib/db";
-import { posts } from "@/lib/db/schema";
+import { postsCollection } from "@/lib/db/mongo-collections";
 
 import { createPost, deletePost, getPostForEdit, listPosts, updatePost } from "./mutations";
 import { postInputSchema, type PostParsed } from "./validation";
 
 /**
- * Integration against a real Postgres: publish-date stamping, slug
- * uniqueness and body sanitisation are the parts a mock would get wrong.
+ * Integration against MongoDB: publish-date stamping, slug uniqueness and body
+ * sanitisation are the parts a mock would get wrong. The shared Mongo client is
+ * closed by test/setup.ts.
  */
 
 const suffix = Date.now().toString(36);
@@ -37,8 +36,9 @@ async function create(over: Partial<Record<string, unknown>> = {}): Promise<stri
 }
 
 afterAll(async () => {
-  if (createdIds.length) await db.delete(posts).where(inArray(posts.id, createdIds));
-  await pool.end();
+  if (createdIds.length) {
+    await postsCollection().deleteMany({ _id: { $in: createdIds } });
+  }
 });
 
 describe("blog mutations", () => {
@@ -94,7 +94,7 @@ describe("blog mutations", () => {
     expect((await listPosts()).some((p) => p.id === id)).toBe(true);
 
     await deletePost(id, null);
-    const [gone] = await db.select().from(posts).where(eq(posts.id, id));
-    expect(gone).toBeUndefined();
+    const gone = await postsCollection().findOne({ _id: id });
+    expect(gone).toBeNull();
   });
 });
