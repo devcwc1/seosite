@@ -171,6 +171,8 @@ export type CategoryDoc = {
 
 /** A line item embedded on an order — a snapshot that survives catalog edits. */
 export type EmbeddedOrderItem = {
+  /** Stable id for this line (React keys, future per-line operations). */
+  id: string;
   /** Kept for reporting; nullable and never trusted for display. */
   productId: string | null;
   title: string;

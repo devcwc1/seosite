@@ -1,15 +1,15 @@
-import { eq } from "drizzle-orm";
-
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { db, pool } from "@/lib/db";
-import { orders } from "@/lib/db/schema";
+import { pool } from "@/lib/db";
+import { ordersCollection } from "@/lib/db/mongo-collections";
+import { ensureIndexes } from "@/lib/db/mongo-indexes";
 import { createProduct, deleteProduct } from "@/lib/products/mutations";
 import { productInputSchema } from "@/lib/products/validation";
 
 import { createOrder, NEXT_STATUSES, setOrderStatus } from "./mutations";
 
-// A self-contained product fixture, so the test does not depend on seed data.
+// A self-contained product fixture (still Postgres), so the test does not
+// depend on seed data. Orders are read from Mongo.
 const suffix = Date.now().toString(36);
 const slug = `status-test-${suffix}`;
 let productId: string;
@@ -30,26 +30,24 @@ async function placeOrder() {
 
   if (!result.ok) throw new Error(`fixture order failed: ${result.error}`);
 
-  const [row] = await db
-    .select({ id: orders.id })
-    .from(orders)
-    .where(eq(orders.orderNumber, result.order.orderNumber))
-    .limit(1);
-
-  created.push(row!.id);
-  return row!.id;
+  const doc = await ordersCollection().findOne(
+    { orderNumber: result.order.orderNumber },
+    { projection: { _id: 1 } },
+  );
+  created.push(doc!._id);
+  return doc!._id;
 }
 
 async function statusOf(id: string) {
-  const [row] = await db
-    .select({ status: orders.status })
-    .from(orders)
-    .where(eq(orders.id, id))
-    .limit(1);
-  return row?.status;
+  const doc = await ordersCollection().findOne(
+    { _id: id },
+    { projection: { status: 1 } },
+  );
+  return doc?.status;
 }
 
 beforeAll(async () => {
+  await ensureIndexes();
   const result = await createProduct(
     productInputSchema.parse({
       title: `Status fixture ${suffix}`,
@@ -74,11 +72,12 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  for (const id of created) {
-    await db.delete(orders).where(eq(orders.id, id));
+  if (created.length) {
+    await ordersCollection().deleteMany({ _id: { $in: created } });
   }
   if (productId) await deleteProduct(productId, null);
   await pool.end();
+  // The shared Mongo client is closed by test/setup.ts.
 });
 
 describe("order status transitions", () => {

@@ -1,20 +1,17 @@
 import "server-only";
 
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
-import { desc, eq, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 import { recordAudit } from "@/lib/audit";
 import { db } from "@/lib/db";
 import {
-  orderItems,
-  orders,
-  productContent,
-  products,
-  type Order,
-  type OrderItem,
-  type OrderStatus,
-} from "@/lib/db/schema";
+  ordersCollection,
+  type EmbeddedOrderItem,
+  type OrderDoc,
+} from "@/lib/db/mongo-collections";
+import { productContent, products, type OrderStatus } from "@/lib/db/schema";
 import { getOrderMoneySettings } from "@/lib/settings/store";
 
 import type { OrderInput } from "./validation";
@@ -22,9 +19,74 @@ import type { OrderInput } from "./validation";
 /**
  * Shipping cost and tax rate are configuration, not code: neither has a
  * defensible default, and VAT in particular is a legal figure. They come from
- * the settings table (editable in the admin), and whatever was applied is
+ * the settings store (editable in the admin), and whatever was applied is
  * stored on the order itself so history stays true.
+ *
+ * Orders live in MongoDB with their line items embedded. Products are still
+ * read from Postgres (migration in progress) to snapshot title/price; the ids
+ * stored on the order are plain strings with no foreign key either way.
  */
+
+/* -------------------------------------------------------------------------- */
+/*  App-facing shapes (flat shipping, so the admin pages are unchanged)        */
+/* -------------------------------------------------------------------------- */
+
+export type OrderRecord = {
+  id: string;
+  orderNumber: string;
+  status: OrderStatus;
+  email: string;
+  phone: string | null;
+  shippingName: string;
+  shippingStreet: string;
+  shippingPostcode: string;
+  shippingCity: string;
+  shippingCountry: string;
+  currency: string;
+  subtotalCents: number;
+  shippingCents: number;
+  taxCents: number;
+  totalCents: number;
+  taxRateBp: number;
+  paymentMethod: string;
+  createdAt: Date;
+};
+
+export type OrderLineItem = {
+  id: string;
+  productId: string | null;
+  title: string;
+  sku: string;
+  slug: string;
+  unitPriceCents: number;
+  quantity: number;
+  lineTotalCents: number;
+};
+
+export type OrderWithItems = OrderRecord & { items: OrderLineItem[] };
+
+function toOrderRecord(doc: OrderDoc): OrderRecord {
+  return {
+    id: doc._id,
+    orderNumber: doc.orderNumber,
+    status: doc.status,
+    email: doc.email,
+    phone: doc.phone,
+    shippingName: doc.shipping.name,
+    shippingStreet: doc.shipping.street,
+    shippingPostcode: doc.shipping.postcode,
+    shippingCity: doc.shipping.city,
+    shippingCountry: doc.shipping.country,
+    currency: doc.currency,
+    subtotalCents: doc.subtotalCents,
+    shippingCents: doc.shippingCents,
+    taxCents: doc.taxCents,
+    totalCents: doc.totalCents,
+    taxRateBp: doc.taxRateBp,
+    paymentMethod: doc.paymentMethod,
+    createdAt: doc.createdAt,
+  };
+}
 
 export type CreateOrderResult =
   | {
@@ -46,12 +108,13 @@ function generateOrderNumber(): string {
   return `ORB-${new Date().getFullYear()}-${suffix.padStart(6, "0").slice(-6)}`;
 }
 
-function isUniqueViolation(error: unknown): boolean {
+/** MongoDB duplicate-key error (e.g. a reused order number). */
+function isDuplicateKey(error: unknown): boolean {
   return (
     typeof error === "object" &&
     error !== null &&
     "code" in error &&
-    (error as { code?: string }).code === "23505"
+    (error as { code?: number }).code === 11000
   );
 }
 
@@ -113,16 +176,14 @@ export async function createOrder(
 
   const currencies = new Set(rows.map((row) => row.currency));
   if (currencies.size > 1) {
-    return {
-      ok: false,
-      error: "An order cannot mix currencies.",
-    };
+    return { ok: false, error: "An order cannot mix currencies." };
   }
   const currency = rows[0]?.currency ?? "EUR";
 
-  const lines = input.items.map((item) => {
+  const lines: EmbeddedOrderItem[] = input.items.map((item) => {
     const product = bySlug.get(item.slug)!;
     return {
+      id: randomUUID(),
       productId: product.id,
       title: product.title ?? product.slug,
       sku: product.sku,
@@ -141,43 +202,39 @@ export async function createOrder(
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const orderNumber = generateOrderNumber();
+    const doc: OrderDoc = {
+      _id: randomUUID(),
+      orderNumber,
+      status: "pending",
+      email: input.email,
+      phone: input.phone || null,
+      shipping: {
+        name: input.shipping.name,
+        street: input.shipping.street,
+        postcode: input.shipping.postcode,
+        city: input.shipping.city,
+        country: input.shipping.country,
+      },
+      currency,
+      subtotalCents: subtotal,
+      shippingCents: shipping,
+      taxCents: tax,
+      totalCents: total,
+      taxRateBp: rateBp,
+      paymentMethod: "none",
+      items: lines,
+      createdAt: new Date(),
+    };
 
     try {
-      const created = await db.transaction(async (tx) => {
-        const [order] = await tx
-          .insert(orders)
-          .values({
-            orderNumber,
-            email: input.email,
-            phone: input.phone || null,
-            shippingName: input.shipping.name,
-            shippingStreet: input.shipping.street,
-            shippingPostcode: input.shipping.postcode,
-            shippingCity: input.shipping.city,
-            shippingCountry: input.shipping.country,
-            currency,
-            subtotalCents: subtotal,
-            shippingCents: shipping,
-            taxCents: tax,
-            totalCents: total,
-            taxRateBp: rateBp,
-          })
-          .returning();
-        if (!order) throw new Error("orders insert returned no row");
-
-        await tx
-          .insert(orderItems)
-          .values(lines.map((line) => ({ ...line, orderId: order.id })));
-
-        return order;
-      });
+      await ordersCollection().insertOne(doc);
 
       await recordAudit({
         actorId: null,
         action: "order.created",
-        target: `order:${created.id}`,
+        target: `order:${doc._id}`,
         metadata: {
-          orderNumber: created.orderNumber,
+          orderNumber,
           totalCents: total,
           currency,
           items: lines.length,
@@ -187,7 +244,7 @@ export async function createOrder(
       return {
         ok: true,
         order: {
-          orderNumber: created.orderNumber,
+          orderNumber,
           currency,
           subtotalCents: subtotal,
           shippingCents: shipping,
@@ -197,7 +254,7 @@ export async function createOrder(
       };
     } catch (error) {
       // Two orders drawing the same number is the only retryable failure.
-      if (!isUniqueViolation(error)) throw error;
+      if (!isDuplicateKey(error)) throw error;
     }
   }
 
@@ -226,11 +283,10 @@ export async function setOrderStatus(
   next: OrderStatus,
   actorId: string | null,
 ): Promise<StatusChangeResult> {
-  const [order] = await db
-    .select({ id: orders.id, status: orders.status, number: orders.orderNumber })
-    .from(orders)
-    .where(eq(orders.id, id))
-    .limit(1);
+  const order = await ordersCollection().findOne(
+    { _id: id },
+    { projection: { status: 1, orderNumber: 1 } },
+  );
   if (!order) return { ok: false, error: "Order not found." };
 
   if (!NEXT_STATUSES[order.status].includes(next)) {
@@ -240,14 +296,14 @@ export async function setOrderStatus(
     };
   }
 
-  await db.update(orders).set({ status: next }).where(eq(orders.id, id));
+  await ordersCollection().updateOne({ _id: id }, { $set: { status: next } });
 
   await recordAudit({
     actorId,
     action: "order.status_changed",
     target: `order:${id}`,
     metadata: {
-      orderNumber: order.number,
+      orderNumber: order.orderNumber,
       from: order.status,
       to: next,
     },
@@ -256,25 +312,18 @@ export async function setOrderStatus(
   return { ok: true };
 }
 
-export type OrderWithItems = Order & { items: OrderItem[] };
-
 /** Newest first, for the admin list. */
-export async function listOrders(limit = 100): Promise<Order[]> {
-  return db.select().from(orders).orderBy(desc(orders.createdAt)).limit(limit);
+export async function listOrders(limit = 100): Promise<OrderRecord[]> {
+  const docs = await ordersCollection()
+    .find({})
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .toArray();
+  return docs.map(toOrderRecord);
 }
 
 export async function getOrder(id: string): Promise<OrderWithItems | null> {
-  const [order] = await db
-    .select()
-    .from(orders)
-    .where(eq(orders.id, id))
-    .limit(1);
-  if (!order) return null;
-
-  const items = await db
-    .select()
-    .from(orderItems)
-    .where(eq(orderItems.orderId, id));
-
-  return { ...order, items };
+  const doc = await ordersCollection().findOne({ _id: id });
+  if (!doc) return null;
+  return { ...toOrderRecord(doc), items: doc.items };
 }
