@@ -2,7 +2,6 @@ import "server-only";
 
 import {
   and,
-  asc,
   desc,
   eq,
   ilike,
@@ -16,12 +15,8 @@ import {
 
 import { recordAudit } from "@/lib/audit";
 import { db } from "@/lib/db";
-import {
-  mediaAssets,
-  productMedia,
-  users,
-  type MediaAsset,
-} from "@/lib/db/schema";
+import { productsCollection } from "@/lib/db/mongo-collections";
+import { mediaAssets, users, type MediaAsset } from "@/lib/db/schema";
 
 import { referencedAssetIds, usageCounts, usageForAsset } from "./usage";
 import type {
@@ -281,32 +276,50 @@ export async function deleteAsset(
 
 /* --------------------------- product galleries --------------------------- */
 
+/**
+ * A product's gallery, resolved for display. The ordered refs live on the
+ * product document (`media`); the asset metadata (URL, dimensions, fallback
+ * alt) is still read from Postgres media_assets. An asset that has since gone
+ * is skipped rather than rendered broken.
+ */
 export async function getProductGallery(
   productId: string,
 ): Promise<ProductMediaItemDTO[]> {
-  const rows = await db
+  const doc = await productsCollection().findOne(
+    { _id: productId },
+    { projection: { media: 1 } },
+  );
+  const media = doc?.media ?? [];
+  if (media.length === 0) return [];
+
+  const assetRows = await db
     .select({
-      assetId: mediaAssets.id,
+      id: mediaAssets.id,
       externalUrl: mediaAssets.externalUrl,
-      linkAlt: productMedia.alt,
-      assetAlt: mediaAssets.alt,
+      alt: mediaAssets.alt,
       width: mediaAssets.width,
       height: mediaAssets.height,
-      position: productMedia.position,
     })
-    .from(productMedia)
-    .innerJoin(mediaAssets, eq(mediaAssets.id, productMedia.mediaAssetId))
-    .where(eq(productMedia.productId, productId))
-    .orderBy(asc(productMedia.position));
+    .from(mediaAssets)
+    .where(inArray(mediaAssets.id, media.map((m) => m.mediaAssetId)));
+  const byId = new Map(assetRows.map((a) => [a.id, a]));
 
-  return rows.map((r) => ({
-    assetId: r.assetId,
-    url: r.externalUrl ?? `/api/v1/media/file/${r.assetId}`,
-    alt: r.linkAlt ?? r.assetAlt,
-    width: r.width,
-    height: r.height,
-    position: r.position,
-  }));
+  return [...media]
+    .sort((a, b) => a.position - b.position)
+    .flatMap((m) => {
+      const asset = byId.get(m.mediaAssetId);
+      if (!asset) return [];
+      return [
+        {
+          assetId: m.mediaAssetId,
+          url: asset.externalUrl ?? `/api/v1/media/file/${m.mediaAssetId}`,
+          alt: m.alt ?? asset.alt,
+          width: asset.width,
+          height: asset.height,
+          position: m.position,
+        },
+      ];
+    });
 }
 
 /** Append an asset to a product's gallery at the next position (idempotent). */
@@ -314,16 +327,23 @@ export async function linkAssetToProduct(
   productId: string,
   assetId: string,
 ): Promise<void> {
-  const rows = await db
-    .select({ max: sql<number>`coalesce(max(${productMedia.position}), -1)` })
-    .from(productMedia)
-    .where(eq(productMedia.productId, productId));
-  const nextPosition = (rows[0]?.max ?? -1) + 1;
+  const doc = await productsCollection().findOne(
+    { _id: productId },
+    { projection: { media: 1 } },
+  );
+  if (!doc) return;
+  if (doc.media.some((m) => m.mediaAssetId === assetId)) return;
 
-  await db
-    .insert(productMedia)
-    .values({ productId, mediaAssetId: assetId, position: nextPosition })
-    .onConflictDoNothing();
+  const nextPosition =
+    doc.media.reduce((max, m) => Math.max(max, m.position), -1) + 1;
+
+  await productsCollection().updateOne(
+    { _id: productId },
+    {
+      $push: { media: { mediaAssetId: assetId, position: nextPosition, alt: null } },
+      $set: { updatedAt: new Date() },
+    },
+  );
 }
 
 /** Remove a single asset from a product's gallery (idempotent). */
@@ -331,34 +351,8 @@ export async function unlinkAssetFromProduct(
   productId: string,
   assetId: string,
 ): Promise<void> {
-  await db
-    .delete(productMedia)
-    .where(
-      and(
-        eq(productMedia.productId, productId),
-        eq(productMedia.mediaAssetId, assetId),
-      ),
-    );
-}
-
-/**
- * Replace a product's gallery with the given ordered asset ids. Runs inside the
- * caller's transaction so it stays consistent with the product write.
- */
-export async function setProductGallery(
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-  productId: string,
-  items: { assetId: string; alt?: string | null }[],
-): Promise<void> {
-  await tx.delete(productMedia).where(eq(productMedia.productId, productId));
-  if (items.length > 0) {
-    await tx.insert(productMedia).values(
-      items.map((it, index) => ({
-        productId,
-        mediaAssetId: it.assetId,
-        position: index,
-        alt: it.alt ?? null,
-      })),
-    );
-  }
+  await productsCollection().updateOne(
+    { _id: productId },
+    { $pull: { media: { mediaAssetId: assetId } }, $set: { updatedAt: new Date() } },
+  );
 }

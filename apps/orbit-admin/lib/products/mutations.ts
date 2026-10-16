@@ -1,31 +1,47 @@
 import "server-only";
 
-import { eq, or } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+
+import { eq } from "drizzle-orm";
 
 import { recordAudit } from "@/lib/audit";
 import {
+  categorySnapshotFromRefs,
   getProductCategories,
   normalizeSelections,
-  resolveCategorySnapshot,
-  setProductCategories,
+  resolveCategoryRefs,
   type ProductCategorySelection,
 } from "@/lib/categories/mutations";
 import { sanitizeRichText } from "@/lib/content/sanitize";
-import { toStoredMeta } from "@/lib/seo/meta";
-import { assetUrl, getProductGallery, setProductGallery } from "@/lib/media/assets";
 import { db } from "@/lib/db";
+import { mongoClient } from "@/lib/db/mongo";
+import {
+  productContentRevisionsCollection,
+  productsCollection,
+  type EmbeddedProductContent,
+  type ProductContentRevisionDoc,
+  type ProductDoc,
+  type ProductMediaRef,
+} from "@/lib/db/mongo-collections";
 import {
   mediaAssets,
-  productContent,
-  productContentRevisions,
-  products,
   type ProductContentSnapshot,
   type ProductMeta,
   type ProductReview,
   type ProductStatus,
 } from "@/lib/db/schema";
+import { assetUrl, getProductGallery } from "@/lib/media/assets";
+import { toStoredMeta } from "@/lib/seo/meta";
 
 import type { ProductParsed } from "./validation";
+
+/**
+ * Products live in MongoDB. A product document embeds its current content, its
+ * ordered media gallery (`media`), and its category refs (`content.categories`)
+ * — the Postgres product_content / product_media / product_categories tables
+ * are gone. Each save also appends an immutable revision. Media assets are
+ * still read from Postgres to resolve URLs for the edit form.
+ */
 
 export type MutationResult =
   | { ok: true; id: string }
@@ -52,11 +68,7 @@ export type ProductEditData = {
   reviews: ProductReview[];
 };
 
-/**
- * Description is rich text. It is sanitised here, on write, because this is
- * the last point the application controls before it is stored and later
- * rendered as HTML by the storefront.
- */
+/** Description is rich text; sanitised on write, the last point we control. */
 function toDescription(input: ProductParsed): string | null {
   return sanitizeRichText(input.description) || null;
 }
@@ -81,7 +93,6 @@ function toReviews(input: ProductParsed): ProductReview[] {
   }));
 }
 
-/** Category selections as `setProductCategories` wants them. */
 function categorySelections(input: ProductParsed): ProductCategorySelection[] {
   return input.categories.map((entry) => ({
     categoryId: entry.categoryId,
@@ -89,9 +100,11 @@ function categorySelections(input: ProductParsed): ProductCategorySelection[] {
   }));
 }
 
-function galleryItems(input: ProductParsed): { assetId: string; alt: string | null }[] {
-  return input.images.map((image) => ({
-    assetId: image.assetId,
+/** Ordered gallery refs from the form's image selections. */
+function galleryRefs(input: ProductParsed): ProductMediaRef[] {
+  return input.images.map((image, index) => ({
+    mediaAssetId: image.assetId,
+    position: index,
     alt: image.alt || null,
   }));
 }
@@ -107,7 +120,7 @@ function buildSnapshot(
     title: input.title,
     shortInfo: toShortInfo(input),
     description: toDescription(input),
-    // Images live in product_media now; the content snapshot no longer carries them.
+    // Images live in the product's `media` array now; the snapshot omits them.
     images: [],
     categories,
     meta,
@@ -122,18 +135,29 @@ async function findUniquenessErrors(
   sku: string,
   excludeId: string | null,
 ): Promise<Record<string, string> | null> {
-  const rows = await db
-    .select({ id: products.id, slug: products.slug, sku: products.sku })
-    .from(products)
-    .where(or(eq(products.slug, slug), eq(products.sku, sku)));
+  const rows = await productsCollection()
+    .find({ $or: [{ slug }, { sku }] }, { projection: { slug: 1, sku: 1 } })
+    .toArray();
 
   const errors: Record<string, string> = {};
   for (const row of rows) {
-    if (excludeId && row.id === excludeId) continue;
+    if (excludeId && row._id === excludeId) continue;
     if (row.slug === slug) errors.slug = "This slug is already in use.";
     if (row.sku === sku) errors.sku = "This SKU is already in use.";
   }
   return Object.keys(errors).length > 0 ? errors : null;
+}
+
+/** Write the product document and its revision atomically. */
+async function writeProductWithRevision(
+  op: (session: import("mongodb").ClientSession) => Promise<void>,
+): Promise<void> {
+  const session = mongoClient.startSession();
+  try {
+    await session.withTransaction(() => op(session));
+  } finally {
+    await session.endSession();
+  }
 }
 
 export async function createProduct(
@@ -143,77 +167,67 @@ export async function createProduct(
   const conflicts = await findUniquenessErrors(input.slug, input.sku, null);
   if (conflicts) return { ok: false, errors: conflicts };
 
-  const priceCents = Math.round(input.price * 100);
-  const stockQuantity = input.inStock ? input.stockQuantity : 0;
+  const now = new Date();
   const meta = toMeta(input);
   const reviews = toReviews(input);
-  const selections = normalizeSelections(categorySelections(input));
+  const categoryRefs = await resolveCategoryRefs(categorySelections(input));
 
-  const id = await db.transaction(async (tx) => {
-    const [product] = await tx
-      .insert(products)
-      .values({
-        sku: input.sku,
-        slug: input.slug,
-        status: input.status,
-        priceCents,
-        currency: input.currency,
-        inStock: input.inStock,
-        stockQuantity,
-        createdBy: actorId,
-      })
-      .returning({ id: products.id });
-    if (!product) throw new Error("Failed to insert product");
+  const content: EmbeddedProductContent = {
+    title: input.title,
+    shortInfo: toShortInfo(input),
+    description: toDescription(input),
+    images: [],
+    categories: categoryRefs,
+    meta,
+    reviews,
+    locale: "en",
+    version: 1,
+  };
 
-    const [content] = await tx
-      .insert(productContent)
-      .values({
-        productId: product.id,
-        title: input.title,
-        shortInfo: toShortInfo(input),
-        description: toDescription(input),
-        images: [],
-        // Categories live in product_categories now, like images.
-        categories: [],
-        meta,
-        reviews,
-        locale: "en",
-        version: 1,
-        updatedBy: actorId,
-      })
-      .returning({ id: productContent.id });
-    if (!content) throw new Error("Failed to insert product content");
+  const product: ProductDoc = {
+    _id: randomUUID(),
+    sku: input.sku,
+    slug: input.slug,
+    status: input.status,
+    priceCents: Math.round(input.price * 100),
+    currency: input.currency,
+    inStock: input.inStock,
+    stockQuantity: input.inStock ? input.stockQuantity : 0,
+    content,
+    media: galleryRefs(input),
+    createdBy: actorId,
+    updatedBy: actorId,
+    createdAt: now,
+    updatedAt: now,
+  };
 
-    const categorySnapshot = await resolveCategorySnapshot(tx, selections);
+  const revision: ProductContentRevisionDoc = {
+    _id: randomUUID(),
+    productId: product._id,
+    version: 1,
+    data: buildSnapshot(input, meta, reviews, categorySnapshotFromRefs(categoryRefs), "en"),
+    changeNote: "Created",
+    editedBy: actorId,
+    createdAt: now,
+  };
 
-    await tx.insert(productContentRevisions).values({
-      contentId: content.id,
-      productId: product.id,
-      version: 1,
-      data: buildSnapshot(input, meta, reviews, categorySnapshot, "en"),
-      changeNote: "Created",
-      editedBy: actorId,
+  try {
+    await writeProductWithRevision(async (session) => {
+      await productsCollection().insertOne(product, { session });
+      await productContentRevisionsCollection().insertOne(revision, { session });
     });
-
-    await setProductGallery(tx, product.id, galleryItems(input));
-    await setProductCategories(tx, product.id, selections);
-
-    await tx
-      .update(products)
-      .set({ currentContentId: content.id })
-      .where(eq(products.id, product.id));
-
-    return product.id;
-  });
+  } catch {
+    return { ok: false, errors: { form: "Could not create the product." } };
+  }
 
   await recordAudit({
     actorId,
     action: "product.created",
-    target: `product:${id}`,
+    target: `product:${product._id}`,
     metadata: { sku: input.sku, slug: input.slug },
   });
 
-  return { ok: true, id };
+  return { ok: true, id: product._id };
 }
 
 export async function updateProduct(
@@ -221,99 +235,70 @@ export async function updateProduct(
   input: ProductParsed,
   actorId: string | null,
 ): Promise<MutationResult> {
-  const [existing] = await db
-    .select()
-    .from(products)
-    .where(eq(products.id, id))
-    .limit(1);
+  const existing = await productsCollection().findOne(
+    { _id: id },
+    { projection: { "content.version": 1, "content.locale": 1 } },
+  );
   if (!existing) return { ok: false, errors: { form: "Product not found." } };
 
   const conflicts = await findUniquenessErrors(input.slug, input.sku, id);
   if (conflicts) return { ok: false, errors: conflicts };
 
-  const priceCents = Math.round(input.price * 100);
-  const stockQuantity = input.inStock ? input.stockQuantity : 0;
+  const now = new Date();
   const meta = toMeta(input);
   const reviews = toReviews(input);
+  const categoryRefs = await resolveCategoryRefs(categorySelections(input));
+  const locale = existing.content?.locale ?? "en";
+  const nextVersion = (existing.content?.version ?? 0) + 1;
 
-  await db.transaction(async (tx) => {
-    const [content] = await tx
-      .select()
-      .from(productContent)
-      .where(eq(productContent.productId, id))
-      .limit(1);
+  const content: EmbeddedProductContent = {
+    title: input.title,
+    shortInfo: toShortInfo(input),
+    description: toDescription(input),
+    images: [],
+    categories: categoryRefs,
+    meta,
+    reviews,
+    locale,
+    version: nextVersion,
+  };
 
-    const selections = normalizeSelections(categorySelections(input));
-    const categorySnapshot = await resolveCategorySnapshot(tx, selections);
-    const locale = content?.locale ?? "en";
-    const nextVersion = (content?.version ?? 0) + 1;
+  const revision: ProductContentRevisionDoc = {
+    _id: randomUUID(),
+    productId: id,
+    version: nextVersion,
+    data: buildSnapshot(input, meta, reviews, categorySnapshotFromRefs(categoryRefs), locale),
+    changeNote: "Updated",
+    editedBy: actorId,
+    createdAt: now,
+  };
 
-    let contentId: string;
-    if (content) {
-      await tx
-        .update(productContent)
-        .set({
-          title: input.title,
-          shortInfo: toShortInfo(input),
-          description: toDescription(input),
-          images: [],
-          categories: [],
-          meta,
-          reviews,
-          version: nextVersion,
-          updatedBy: actorId,
-          updatedAt: new Date(),
-        })
-        .where(eq(productContent.id, content.id));
-      contentId = content.id;
-    } else {
-      const [created] = await tx
-        .insert(productContent)
-        .values({
-          productId: id,
-          title: input.title,
-          shortInfo: toShortInfo(input),
-          description: toDescription(input),
-          images: [],
-          categories: [],
-          meta,
-          reviews,
-          locale,
-          version: nextVersion,
-          updatedBy: actorId,
-        })
-        .returning({ id: productContent.id });
-      if (!created) throw new Error("Failed to insert product content");
-      contentId = created.id;
-    }
-
-    await tx.insert(productContentRevisions).values({
-      contentId,
-      productId: id,
-      version: nextVersion,
-      data: buildSnapshot(input, meta, reviews, categorySnapshot, locale),
-      changeNote: "Updated",
-      editedBy: actorId,
+  try {
+    await writeProductWithRevision(async (session) => {
+      await productsCollection().updateOne(
+        { _id: id },
+        {
+          $set: {
+            sku: input.sku,
+            slug: input.slug,
+            status: input.status,
+            priceCents: Math.round(input.price * 100),
+            currency: input.currency,
+            inStock: input.inStock,
+            stockQuantity: input.inStock ? input.stockQuantity : 0,
+            content,
+            media: galleryRefs(input),
+            updatedBy: actorId,
+            updatedAt: now,
+          },
+        },
+        { session },
+      );
+      await productContentRevisionsCollection().insertOne(revision, { session });
     });
-
-    await setProductGallery(tx, id, galleryItems(input));
-    await setProductCategories(tx, id, selections);
-
-    await tx
-      .update(products)
-      .set({
-        sku: input.sku,
-        slug: input.slug,
-        status: input.status,
-        priceCents,
-        currency: input.currency,
-        inStock: input.inStock,
-        stockQuantity,
-        currentContentId: contentId,
-        updatedAt: new Date(),
-      })
-      .where(eq(products.id, id));
-  });
+  } catch {
+    return { ok: false, errors: { form: "Could not update the product." } };
+  }
 
   await recordAudit({
     actorId,
@@ -329,15 +314,16 @@ export async function deleteProduct(
   id: string,
   actorId: string | null,
 ): Promise<MutationResult> {
-  const [existing] = await db
-    .select({ sku: products.sku, slug: products.slug })
-    .from(products)
-    .where(eq(products.id, id))
-    .limit(1);
+  const existing = await productsCollection().findOne(
+    { _id: id },
+    { projection: { sku: 1, slug: 1 } },
+  );
   if (!existing) return { ok: false, errors: { form: "Product not found." } };
 
-  // product_media, content and revisions cascade via their FKs to products.id.
-  await db.delete(products).where(eq(products.id, id));
+  // Content and gallery are embedded (gone with the doc); revisions are their
+  // own collection, so they are removed explicitly.
+  await productsCollection().deleteOne({ _id: id });
+  await productContentRevisionsCollection().deleteMany({ productId: id });
 
   await recordAudit({
     actorId,
@@ -349,31 +335,20 @@ export async function deleteProduct(
   return { ok: true, id };
 }
 
-/** Load a product + its live content (scalars), shaped for the edit form. */
+/** Load a product shaped for the edit form, gallery included. */
 export async function getProductForEdit(
   id: string,
 ): Promise<ProductEditData | null> {
-  const [product] = await db
-    .select()
-    .from(products)
-    .where(eq(products.id, id))
-    .limit(1);
+  const product = await productsCollection().findOne({ _id: id });
   if (!product) return null;
 
-  const [content] = await db
-    .select()
-    .from(productContent)
-    .where(eq(productContent.productId, id))
-    .limit(1);
-
-  const [gallery, categorySelections] = await Promise.all([
+  const [gallery, categories] = await Promise.all([
     getProductGallery(id),
     getProductCategories(id),
   ]);
 
-  // The OG image is stored as an id. Resolving it here means the form shows
-  // the picked image rather than an empty box that looks like nothing is set.
-  const ogImageAssetId = content?.meta?.ogImageAssetId;
+  // The OG image is stored as an id; resolve it so the form shows the choice.
+  const ogImageAssetId = product.content.meta?.ogImageAssetId;
   let ogImageUrl = "";
   if (ogImageAssetId) {
     const [asset] = await db
@@ -385,13 +360,13 @@ export async function getProductForEdit(
   }
 
   return {
-    id: product.id,
-    title: content?.title ?? "",
+    id: product._id,
+    title: product.content.title,
     slug: product.slug,
     sku: product.sku,
     status: product.status,
-    shortInfo: content?.shortInfo ?? "",
-    description: content?.description ?? "",
+    shortInfo: product.content.shortInfo ?? "",
+    description: product.content.description ?? "",
     price: product.priceCents / 100,
     currency: product.currency,
     inStock: product.inStock,
@@ -401,10 +376,9 @@ export async function getProductForEdit(
       url: item.url,
       alt: item.alt ?? "",
     })),
-    categories: categorySelections,
-    meta: content?.meta ?? {},
+    categories,
+    meta: product.content.meta ?? {},
     ogImageUrl,
-    reviews: content?.reviews ?? [],
+    reviews: product.content.reviews ?? [],
   };
 }
-

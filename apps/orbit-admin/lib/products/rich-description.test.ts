@@ -1,8 +1,6 @@
-import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { db, pool } from "@/lib/db";
-import { productContent } from "@/lib/db/schema";
+import { productsCollection } from "@/lib/db/mongo-collections";
 import { getStorefrontProduct } from "@/lib/storefront/products";
 
 import { createProduct, deleteProduct, getProductForEdit } from "./mutations";
@@ -44,17 +42,16 @@ async function create(description: string, key: string) {
 }
 
 async function storedDescription(productId: string) {
-  const [row] = await db
-    .select({ description: productContent.description })
-    .from(productContent)
-    .where(eq(productContent.productId, productId))
-    .limit(1);
-  return row?.description ?? null;
+  const doc = await productsCollection().findOne(
+    { _id: productId },
+    { projection: { "content.description": 1 } },
+  );
+  return doc?.content.description ?? null;
 }
 
 afterAll(async () => {
   for (const id of createdIds) await deleteProduct(id, null);
-  await pool.end();
+  // The shared Mongo client is closed by test/setup.ts.
 });
 
 describe("rich text product descriptions", () => {

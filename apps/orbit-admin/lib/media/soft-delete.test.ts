@@ -2,7 +2,8 @@ import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { db, pool } from "@/lib/db";
-import { mediaAssets, productMedia } from "@/lib/db/schema";
+import { productsCollection } from "@/lib/db/mongo-collections";
+import { mediaAssets } from "@/lib/db/schema";
 import { createProduct, deleteProduct } from "@/lib/products/mutations";
 import { productInputSchema } from "@/lib/products/validation";
 
@@ -99,9 +100,10 @@ describe("deleting a media asset", () => {
     if (!product.ok) throw new Error("fixture failed");
     productIds.push(product.id);
 
-    await db
-      .insert(productMedia)
-      .values({ productId: product.id, mediaAssetId: id, position: 0 });
+    await productsCollection().updateOne(
+      { _id: product.id },
+      { $push: { media: { mediaAssetId: id, position: 0, alt: null } } },
+    );
 
     const result = await deleteAsset(id, null);
 

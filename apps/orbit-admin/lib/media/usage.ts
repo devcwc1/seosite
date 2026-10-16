@@ -1,16 +1,17 @@
 import "server-only";
 
-import { eq, inArray, sql } from "drizzle-orm";
+import type { Collection, Document } from "mongodb";
+
+import { eq, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { pagesCollection, postsCollection } from "@/lib/db/mongo-collections";
 import {
-  categories,
-  productContent,
-  productMedia,
-  products,
-  settings,
-} from "@/lib/db/schema";
+  categoriesCollection,
+  pagesCollection,
+  postsCollection,
+  productsCollection,
+} from "@/lib/db/mongo-collections";
+import { settings } from "@/lib/db/schema";
 import { SITE_SEO_SETTING_KEY } from "@/lib/seo/site-settings";
 
 /**
@@ -22,8 +23,8 @@ import { SITE_SEO_SETTING_KEY } from "@/lib/seo/site-settings";
  * asset unused while something still points at it — exactly the mistake that
  * makes a delete unsafe.
  *
- * Migration in progress: posts and pages are read from MongoDB; products,
- * categories and settings are still read from Postgres.
+ * Products, categories, posts and pages are read from MongoDB; only the
+ * site-wide settings are still read from Postgres (migration in progress).
  */
 
 export type MediaUsageKind =
@@ -45,20 +46,18 @@ export type MediaUsageRef = {
   href: string;
 };
 
-/** SQL for an asset id held in a jsonb column under the given key. */
-function jsonAssetId(
-  column: typeof productContent.meta | typeof categories.meta,
-  key: string,
-) {
-  return sql<string | null>`${column} ->> ${sql.raw(`'${key}'`)}`;
-}
-
-const PRODUCT_OG = jsonAssetId(productContent.meta, "ogImageAssetId");
-const CATEGORY_OG = jsonAssetId(categories.meta, "ogImageAssetId");
 const SITE_DEFAULT_OG = sql<string | null>`${settings.value} ->> 'defaultOgImageAssetId'`;
 const SITE_LOGO = sql<string | null>`${settings.value} ->> 'logoAssetId'`;
 
 type IdTitle = { id: string; title: string };
+
+function siteSettings() {
+  return db
+    .select({ defaultOg: SITE_DEFAULT_OG, logo: SITE_LOGO })
+    .from(settings)
+    .where(eq(settings.key, SITE_SEO_SETTING_KEY))
+    .limit(1);
+}
 
 /**
  * Every place this asset is referenced.
@@ -70,27 +69,23 @@ type IdTitle = { id: string; title: string };
 export async function usageForAsset(assetId: string): Promise<MediaUsageRef[]> {
   const [gallery, productOg, categoryOg, postCover, postOg, pageOg, site] =
     await Promise.all([
-      db
-        .selectDistinct({
-          id: products.id,
-          slug: products.slug,
-          title: productContent.title,
-        })
-        .from(productMedia)
-        .innerJoin(products, eq(productMedia.productId, products.id))
-        .leftJoin(productContent, eq(productContent.productId, products.id))
-        .where(eq(productMedia.mediaAssetId, assetId)),
+      productsCollection()
+        .find({ "media.mediaAssetId": assetId }, { projection: { slug: 1, "content.title": 1 } })
+        .toArray()
+        .then((docs) => docs.map((d) => ({ id: d._id, title: d.content.title || d.slug }))),
 
-      db
-        .select({ id: products.id, slug: products.slug, title: productContent.title })
-        .from(productContent)
-        .innerJoin(products, eq(productContent.productId, products.id))
-        .where(eq(PRODUCT_OG, assetId)),
+      productsCollection()
+        .find(
+          { "content.meta.ogImageAssetId": assetId },
+          { projection: { slug: 1, "content.title": 1 } },
+        )
+        .toArray()
+        .then((docs) => docs.map((d) => ({ id: d._id, title: d.content.title || d.slug }))),
 
-      db
-        .select({ id: categories.id, name: categories.name })
-        .from(categories)
-        .where(eq(CATEGORY_OG, assetId)),
+      categoriesCollection()
+        .find({ "meta.ogImageAssetId": assetId }, { projection: { name: 1 } })
+        .toArray()
+        .then((docs) => docs.map((d) => ({ id: d._id, name: d.name }))),
 
       postsCollection()
         .find({ coverImageAssetId: assetId }, { projection: { title: 1 } })
@@ -107,25 +102,20 @@ export async function usageForAsset(assetId: string): Promise<MediaUsageRef[]> {
         .toArray()
         .then((docs): IdTitle[] => docs.map((d) => ({ id: d._id, title: d.title }))),
 
-      db
-        .select({ defaultOg: SITE_DEFAULT_OG, logo: SITE_LOGO })
-        .from(settings)
-        .where(eq(settings.key, SITE_SEO_SETTING_KEY))
-        .limit(1),
+      siteSettings(),
     ]);
 
-  // A product with no content row has no title; its slug is never null.
   const refs: MediaUsageRef[] = [
     ...gallery.map((row) => ({
       kind: "gallery" as const,
       targetId: row.id,
-      title: row.title ?? row.slug,
+      title: row.title,
       href: `/products/${row.id}`,
     })),
     ...productOg.map((row) => ({
       kind: "ogImage" as const,
       targetId: row.id,
-      title: row.title ?? row.slug,
+      title: row.title,
       href: `/products/${row.id}`,
     })),
     ...categoryOg.map((row) => ({
@@ -180,8 +170,8 @@ export async function usageForAsset(assetId: string): Promise<MediaUsageRef[]> {
 type IdCount = { assetId: string | null; n: number };
 
 /** Count distinct documents per asset id, from a Mongo field. */
-async function mongoCounts(
-  collection: ReturnType<typeof postsCollection> | ReturnType<typeof pagesCollection>,
+async function mongoCounts<T extends Document>(
+  collection: Collection<T>,
   field: string,
   assetIds: string[],
 ): Promise<IdCount[]> {
@@ -189,6 +179,20 @@ async function mongoCounts(
     .aggregate([
       { $match: { [field]: { $in: assetIds } } },
       { $group: { _id: `$${field}`, n: { $sum: 1 } } },
+    ])
+    .toArray();
+  return rows.map((r) => ({ assetId: r._id as string | null, n: r.n as number }));
+}
+
+/** Count distinct products referencing each asset in their gallery. */
+async function galleryCounts(assetIds: string[]): Promise<IdCount[]> {
+  const rows = await productsCollection()
+    .aggregate([
+      { $match: { "media.mediaAssetId": { $in: assetIds } } },
+      { $unwind: "$media" },
+      { $match: { "media.mediaAssetId": { $in: assetIds } } },
+      { $group: { _id: { asset: "$media.mediaAssetId", product: "$_id" } } },
+      { $group: { _id: "$_id.asset", n: { $sum: 1 } } },
     ])
     .toArray();
   return rows.map((r) => ({ assetId: r._id as string | null, n: r.n as number }));
@@ -213,43 +217,13 @@ export async function usageCounts(
 
   const [gallery, productOg, categoryOg, postCover, postOg, pageOg, site] =
     await Promise.all([
-      db
-        .select({
-          assetId: productMedia.mediaAssetId,
-          // Distinct products: two gallery slots on one product is one user.
-          n: sql<number>`count(distinct ${productMedia.productId})::int`,
-        })
-        .from(productMedia)
-        .where(inArray(productMedia.mediaAssetId, assetIds))
-        .groupBy(productMedia.mediaAssetId),
-
-      db
-        .select({
-          assetId: PRODUCT_OG,
-          n: sql<number>`count(distinct ${productContent.productId})::int`,
-        })
-        .from(productContent)
-        .where(inArray(PRODUCT_OG, assetIds))
-        .groupBy(PRODUCT_OG),
-
-      db
-        .select({
-          assetId: CATEGORY_OG,
-          n: sql<number>`count(distinct ${categories.id})::int`,
-        })
-        .from(categories)
-        .where(inArray(CATEGORY_OG, assetIds))
-        .groupBy(CATEGORY_OG),
-
+      galleryCounts(assetIds),
+      mongoCounts(productsCollection(), "content.meta.ogImageAssetId", assetIds),
+      mongoCounts(categoriesCollection(), "meta.ogImageAssetId", assetIds),
       mongoCounts(postsCollection(), "coverImageAssetId", assetIds),
       mongoCounts(postsCollection(), "meta.ogImageAssetId", assetIds),
       mongoCounts(pagesCollection(), "meta.ogImageAssetId", assetIds),
-
-      db
-        .select({ defaultOg: SITE_DEFAULT_OG, logo: SITE_LOGO })
-        .from(settings)
-        .where(eq(settings.key, SITE_SEO_SETTING_KEY))
-        .limit(1),
+      siteSettings(),
     ]);
 
   for (const row of gallery) add(row.assetId, row.n);
@@ -267,6 +241,15 @@ export async function usageCounts(
   return counts;
 }
 
+/** Non-null distinct values of a Mongo field, as strings. */
+async function mongoDistinct<T extends Document>(
+  collection: Collection<T>,
+  field: string,
+): Promise<string[]> {
+  const values = (await collection.distinct(field)) as (string | null)[];
+  return values.filter((v): v is string => Boolean(v));
+}
+
 /**
  * Ids of every asset referenced anywhere, for the used/unused filter.
  *
@@ -277,26 +260,22 @@ export async function usageCounts(
 export async function referencedAssetIds(): Promise<Set<string>> {
   const [gallery, productOg, categoryOg, postCover, postOg, pageOg, site] =
     await Promise.all([
-      db.selectDistinct({ id: productMedia.mediaAssetId }).from(productMedia),
-      db.selectDistinct({ id: PRODUCT_OG }).from(productContent),
-      db.selectDistinct({ id: CATEGORY_OG }).from(categories),
-      postsCollection().distinct("coverImageAssetId") as Promise<(string | null)[]>,
-      postsCollection().distinct("meta.ogImageAssetId") as Promise<(string | null)[]>,
-      pagesCollection().distinct("meta.ogImageAssetId") as Promise<(string | null)[]>,
-      db
-        .select({ defaultOg: SITE_DEFAULT_OG, logo: SITE_LOGO })
-        .from(settings)
-        .where(eq(settings.key, SITE_SEO_SETTING_KEY))
-        .limit(1),
+      mongoDistinct(productsCollection(), "media.mediaAssetId"),
+      mongoDistinct(productsCollection(), "content.meta.ogImageAssetId"),
+      mongoDistinct(categoriesCollection(), "meta.ogImageAssetId"),
+      mongoDistinct(postsCollection(), "coverImageAssetId"),
+      mongoDistinct(postsCollection(), "meta.ogImageAssetId"),
+      mongoDistinct(pagesCollection(), "meta.ogImageAssetId"),
+      siteSettings(),
     ]);
 
   const ids = new Set<string>();
-  for (const row of gallery) ids.add(row.id);
-  for (const row of productOg) if (row.id) ids.add(row.id);
-  for (const row of categoryOg) if (row.id) ids.add(row.id);
-  for (const id of postCover) if (id) ids.add(id);
-  for (const id of postOg) if (id) ids.add(id);
-  for (const id of pageOg) if (id) ids.add(id);
+  for (const id of gallery) ids.add(id);
+  for (const id of productOg) ids.add(id);
+  for (const id of categoryOg) ids.add(id);
+  for (const id of postCover) ids.add(id);
+  for (const id of postOg) ids.add(id);
+  for (const id of pageOg) ids.add(id);
   if (site[0]?.defaultOg) ids.add(site[0].defaultOg);
   if (site[0]?.logo) ids.add(site[0].logo);
   return ids;

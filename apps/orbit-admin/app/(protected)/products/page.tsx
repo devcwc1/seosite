@@ -1,4 +1,4 @@
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import Link from "next/link";
 import { Plus, Upload } from "lucide-react";
 
@@ -15,7 +15,8 @@ import {
 } from "@/components/ui/table";
 import { getCurrentSession, isWriter } from "@/lib/auth/session";
 import { db } from "@/lib/db";
-import { mediaAssets, productContent, productMedia, products } from "@/lib/db/schema";
+import { productsCollection } from "@/lib/db/mongo-collections";
+import { mediaAssets } from "@/lib/db/schema";
 import { formatPrice } from "@/lib/format";
 
 type Thumb = { url: string; alt: string | null };
@@ -24,57 +25,49 @@ export default async function ProductsPage() {
   const session = await getCurrentSession();
   const canWrite = !!session && isWriter(session.user);
 
-  const rows = await db
-    .select({
-      id: products.id,
-      sku: products.sku,
-      status: products.status,
-      priceCents: products.priceCents,
-      currency: products.currency,
-      inStock: products.inStock,
-      stock: products.stockQuantity,
-      title: productContent.title,
-      // Legacy jsonb gallery — fallback for rows not yet backfilled.
-      legacyImages: productContent.images,
-    })
-    .from(products)
-    .leftJoin(productContent, eq(productContent.id, products.currentContentId))
-    .orderBy(desc(products.createdAt));
+  const docs = await productsCollection()
+    .find({})
+    .sort({ createdAt: -1 })
+    .toArray();
 
-  // Primary image per product from product_media (authoritative, ORB-501).
+  const rows = docs.map((d) => ({
+    id: d._id,
+    sku: d.sku,
+    status: d.status,
+    priceCents: d.priceCents,
+    currency: d.currency,
+    inStock: d.inStock,
+    stock: d.stockQuantity,
+    title: d.content.title,
+  }));
+
+  // Primary image per product from the embedded gallery (ORB-501); asset URLs
+  // are still resolved from Postgres media_assets (migration in progress).
   const primaryByProduct = new Map<string, Thumb>();
-  const ids = rows.map((r) => r.id);
-  if (ids.length > 0) {
-    const media = await db
-      .select({
-        productId: productMedia.productId,
-        assetId: mediaAssets.id,
-        externalUrl: mediaAssets.externalUrl,
-        linkAlt: productMedia.alt,
-        assetAlt: mediaAssets.alt,
-        position: productMedia.position,
-      })
-      .from(productMedia)
-      .innerJoin(mediaAssets, eq(mediaAssets.id, productMedia.mediaAssetId))
-      .where(inArray(productMedia.productId, ids))
-      .orderBy(asc(productMedia.position));
-    for (const m of media) {
-      if (!primaryByProduct.has(m.productId)) {
-        primaryByProduct.set(m.productId, {
-          url: m.externalUrl ?? `/api/v1/media/file/${m.assetId}`,
-          alt: m.linkAlt ?? m.assetAlt,
+  const assetIds = [
+    ...new Set(docs.flatMap((d) => d.media.map((m) => m.mediaAssetId))),
+  ];
+  if (assetIds.length > 0) {
+    const assets = await db
+      .select({ id: mediaAssets.id, externalUrl: mediaAssets.externalUrl, alt: mediaAssets.alt })
+      .from(mediaAssets)
+      .where(inArray(mediaAssets.id, assetIds));
+    const byId = new Map(assets.map((a) => [a.id, a]));
+    for (const d of docs) {
+      const primary = [...d.media].sort((a, b) => a.position - b.position)[0];
+      if (!primary) continue;
+      const asset = byId.get(primary.mediaAssetId);
+      if (asset) {
+        primaryByProduct.set(d._id, {
+          url: asset.externalUrl ?? `/api/v1/media/file/${primary.mediaAssetId}`,
+          alt: primary.alt ?? asset.alt,
         });
       }
     }
   }
 
   function thumbFor(row: (typeof rows)[number]): Thumb | null {
-    const primary = primaryByProduct.get(row.id);
-    if (primary) return primary;
-    const legacy = row.legacyImages
-      ?.slice()
-      .sort((a, b) => a.position - b.position)[0];
-    return legacy ? { url: legacy.url, alt: legacy.alt ?? null } : null;
+    return primaryByProduct.get(row.id) ?? null;
   }
 
   return (

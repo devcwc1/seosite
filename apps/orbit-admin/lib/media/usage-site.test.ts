@@ -1,8 +1,11 @@
+import { randomUUID } from "node:crypto";
+
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { db, pool } from "@/lib/db";
-import { categories, mediaAssets, settings } from "@/lib/db/schema";
+import { categoriesCollection } from "@/lib/db/mongo-collections";
+import { mediaAssets, settings } from "@/lib/db/schema";
 import { SITE_SEO_SETTING_KEY } from "@/lib/seo/site-settings";
 
 import { deleteAsset, listAssets } from "./assets";
@@ -53,15 +56,19 @@ beforeAll(async () => {
   defaultOgAsset = await makeAsset("defaultog");
   logoAsset = await makeAsset("logo");
 
-  const [category] = await db
-    .insert(categories)
-    .values({
-      name: `Usage site ${suffix}`,
-      slug: `usage-site-${suffix}`,
-      meta: { ogImageAssetId: categoryAsset },
-    })
-    .returning({ id: categories.id });
-  categoryId = category!.id;
+  categoryId = randomUUID();
+  const now = new Date();
+  await categoriesCollection().insertOne({
+    _id: categoryId,
+    slug: `usage-site-${suffix}`,
+    name: `Usage site ${suffix}`,
+    description: null,
+    meta: { ogImageAssetId: categoryAsset },
+    position: 0,
+    createdBy: null,
+    createdAt: now,
+    updatedAt: now,
+  });
 
   const value = {
     ...((existing?.value as object) ?? {}),
@@ -83,7 +90,7 @@ afterAll(async () => {
   } else {
     await db.delete(settings).where(eq(settings.key, SITE_SEO_SETTING_KEY));
   }
-  await db.delete(categories).where(eq(categories.id, categoryId));
+  await categoriesCollection().deleteOne({ _id: categoryId });
   for (const id of assetIds) await db.delete(mediaAssets).where(eq(mediaAssets.id, id));
   await pool.end();
 });

@@ -2,16 +2,14 @@ import "server-only";
 
 import { randomBytes, randomUUID } from "node:crypto";
 
-import { eq, inArray } from "drizzle-orm";
-
 import { recordAudit } from "@/lib/audit";
-import { db } from "@/lib/db";
 import {
   ordersCollection,
+  productsCollection,
   type EmbeddedOrderItem,
   type OrderDoc,
 } from "@/lib/db/mongo-collections";
-import { productContent, products, type OrderStatus } from "@/lib/db/schema";
+import { type OrderStatus } from "@/lib/db/schema";
 import { getOrderMoneySettings } from "@/lib/settings/store";
 
 import type { OrderInput } from "./validation";
@@ -131,21 +129,35 @@ export async function createOrder(
 ): Promise<CreateOrderResult> {
   const slugs = [...new Set(input.items.map((item) => item.slug))];
 
-  const rows = await db
-    .select({
-      id: products.id,
-      slug: products.slug,
-      sku: products.sku,
-      priceCents: products.priceCents,
-      currency: products.currency,
-      inStock: products.inStock,
-      stockQuantity: products.stockQuantity,
-      status: products.status,
-      title: productContent.title,
-    })
-    .from(products)
-    .leftJoin(productContent, eq(productContent.id, products.currentContentId))
-    .where(inArray(products.slug, slugs));
+  const docs = await productsCollection()
+    .find(
+      { slug: { $in: slugs } },
+      {
+        projection: {
+          slug: 1,
+          sku: 1,
+          priceCents: 1,
+          currency: 1,
+          inStock: 1,
+          stockQuantity: 1,
+          status: 1,
+          "content.title": 1,
+        },
+      },
+    )
+    .toArray();
+
+  const rows = docs.map((d) => ({
+    id: d._id,
+    slug: d.slug,
+    sku: d.sku,
+    priceCents: d.priceCents,
+    currency: d.currency,
+    inStock: d.inStock,
+    stockQuantity: d.stockQuantity,
+    status: d.status,
+    title: d.content.title,
+  }));
 
   const bySlug = new Map(rows.map((row) => [row.slug, row]));
 

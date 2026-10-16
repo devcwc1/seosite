@@ -2,7 +2,8 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { db, pool } from "@/lib/db";
-import { mediaAssets, productContent, productMedia } from "@/lib/db/schema";
+import { productsCollection } from "@/lib/db/mongo-collections";
+import { mediaAssets } from "@/lib/db/schema";
 import { createProduct, deleteProduct } from "@/lib/products/mutations";
 import { productInputSchema } from "@/lib/products/validation";
 
@@ -64,14 +65,17 @@ async function makeProduct(key: string, title: string): Promise<string> {
 }
 
 async function attachToGallery(productId: string, assetId: string, position = 0) {
-  await db.insert(productMedia).values({ productId, mediaAssetId: assetId, position });
+  await productsCollection().updateOne(
+    { _id: productId },
+    { $push: { media: { mediaAssetId: assetId, position, alt: null } } },
+  );
 }
 
 async function setOgImage(productId: string, assetId: string | null) {
-  await db
-    .update(productContent)
-    .set({ meta: assetId ? { ogImageAssetId: assetId } : {} })
-    .where(eq(productContent.productId, productId));
+  await productsCollection().updateOne(
+    { _id: productId },
+    { $set: { "content.meta": assetId ? { ogImageAssetId: assetId } : {} } },
+  );
 }
 
 let sharedAsset: string;
@@ -169,7 +173,10 @@ describe("usageCounts", () => {
     // but they are different kinds of use, so both are counted once each.
     expect(counts.get(ogOnlyAsset)).toBe(2);
 
-    await db.delete(productMedia).where(eq(productMedia.mediaAssetId, ogOnlyAsset));
+    await productsCollection().updateMany(
+      {},
+      { $pull: { media: { mediaAssetId: ogOnlyAsset } } },
+    );
   });
 
   it("asks nothing of the database for an empty list", async () => {
