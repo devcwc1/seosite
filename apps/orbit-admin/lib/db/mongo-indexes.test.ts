@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { mongoClient } from "./mongo";
 import {
   COLLECTIONS,
   usersCollection,
@@ -40,7 +39,7 @@ afterAll(async () => {
   if (createdUserIds.length) {
     await usersCollection().deleteMany({ _id: { $in: createdUserIds } });
   }
-  await mongoClient.close();
+  // The shared Mongo client is closed by test/setup.ts's afterAll.
 });
 
 describe("mongo index setup", () => {
