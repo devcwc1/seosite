@@ -1,20 +1,24 @@
 import "dotenv/config";
 
-import { eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 
 import { hashPassword } from "../lib/auth/password";
-import { db, pool } from "../lib/db";
+import { mongoClient } from "../lib/db/mongo";
 import {
-  auditLogs,
-  productContent,
-  productContentRevisions,
-  products,
-  settings,
-  users,
-  type ProductCategory,
-  type ProductImage,
-} from "../lib/db/schema";
+  auditLogsCollection,
+  productContentRevisionsCollection,
+  productsCollection,
+  settingsCollection,
+  usersCollection,
+  type EmbeddedProductContent,
+} from "../lib/db/mongo-collections";
 import { logger } from "../lib/logger";
+
+/**
+ * Seeds the MongoDB development database. Written against the collections
+ * directly (not the `server-only` lib modules) so it runs under plain `tsx`.
+ * Idempotent throughout: a second run touches nothing that already exists.
+ */
 
 const log = logger.child({ script: "seed" });
 
@@ -23,71 +27,66 @@ const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe!Admin123";
 
 /**
  * Seed the initial admin. Returns the admin's id whether it was just created or
- * already existed, so later steps can attribute their rows to it.
+ * already existed, so later steps can attribute their rows to it. A second run
+ * leaves an existing admin untouched (no password reset).
  */
 async function seedAdmin(): Promise<string | null> {
   log.info({ email: ADMIN_EMAIL }, "Seeding initial admin user");
 
-  const passwordHash = await hashPassword(ADMIN_PASSWORD);
-
-  // Insert the admin. MFA is enforced by policy but not yet enrolled — the
-  // admin completes enrolment on first sign-in.
-  const [admin] = await db
-    .insert(users)
-    .values({
-      email: ADMIN_EMAIL,
-      passwordHash,
-      role: "admin",
-      mfaEnforced: true,
-      mfaEnrolled: false,
-    })
-    .onConflictDoNothing({ target: users.email })
-    .returning({ id: users.id, email: users.email });
-
-  if (!admin) {
+  const existing = await usersCollection().findOne({ email: ADMIN_EMAIL });
+  if (existing) {
     log.warn(
       { email: ADMIN_EMAIL },
       "Admin already exists — left untouched (no password reset)",
     );
-
-    const [existing] = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.email, ADMIN_EMAIL))
-      .limit(1);
-
-    return existing?.id ?? null;
+    return existing._id;
   }
 
-  await db.insert(auditLogs).values({
-    actorId: admin.id,
+  const passwordHash = await hashPassword(ADMIN_PASSWORD);
+  const id = randomUUID();
+
+  // MFA is enforced by policy but not yet enrolled — the admin completes
+  // enrolment on first sign-in.
+  await usersCollection().insertOne({
+    _id: id,
+    email: ADMIN_EMAIL,
+    passwordHash,
+    role: "admin",
+    status: "active",
+    mfaEnforced: true,
+    mfaEnrolled: false,
+    createdAt: new Date(),
+  });
+
+  await auditLogsCollection().insertOne({
+    _id: randomUUID(),
+    actorId: id,
     action: "user.seeded",
-    target: `user:${admin.id}`,
+    target: `user:${id}`,
     metadata: { role: "admin", via: "scripts/seed.ts" },
+    createdAt: new Date(),
   });
 
   // A couple of sensible application defaults so `settings` is usable.
-  await db
-    .insert(settings)
-    .values([
-      {
-        key: "mfa.issuer",
-        value: "Orbit Admin",
-        description: "Issuer label shown in authenticator apps.",
-        updatedBy: admin.id,
-      },
-      {
-        key: "products.defaultCurrency",
-        value: "EUR",
-        description: "Default currency for newly created products.",
-        updatedBy: admin.id,
-      },
-    ])
-    .onConflictDoNothing({ target: settings.key });
+  await settingsCollection().insertMany([
+    {
+      _id: "mfa.issuer",
+      value: "Orbit Admin",
+      description: "Issuer label shown in authenticator apps.",
+      updatedBy: id,
+      updatedAt: new Date(),
+    },
+    {
+      _id: "products.defaultCurrency",
+      value: "EUR",
+      description: "Default currency for newly created products.",
+      updatedBy: id,
+      updatedAt: new Date(),
+    },
+  ]);
 
-  log.info({ id: admin.id, email: admin.email }, "Admin user created");
-
-  return admin.id;
+  log.info({ id, email: ADMIN_EMAIL }, "Admin user created");
+  return id;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -103,14 +102,13 @@ type DemoProduct = {
   title: string;
   shortInfo: string;
   description: string;
-  images: ProductImage[];
-  categories: ProductCategory[];
 };
 
 /**
  * A small published catalog so the storefront has something to render before
- * any product has been authored through the admin UI. Every entry is
- * `published`, which is the only status the storefront read model exposes.
+ * any product has been authored through the admin UI. Galleries and categories
+ * are left empty — images attach as media-library assets through the admin,
+ * which a seed has no files for.
  */
 const DEMO_PRODUCTS: DemoProduct[] = [
   {
@@ -123,22 +121,6 @@ const DEMO_PRODUCTS: DemoProduct[] = [
     shortInfo: "A 350ml ceramic mug with the Orbit mark.",
     description:
       "Double-walled ceramic, dishwasher and microwave safe. Holds 350ml.",
-    images: [
-      {
-        url: "https://picsum.photos/seed/orbit-mug-a/800/800",
-        alt: "Orbit Mug, front view",
-        position: 1,
-      },
-      {
-        url: "https://picsum.photos/seed/orbit-mug-b/800/800",
-        alt: "Orbit Mug, side view",
-        position: 2,
-      },
-    ],
-    categories: [
-      { slug: "drinkware", name: "Drinkware", isPrimary: true },
-      { slug: "gifts", name: "Gifts", isPrimary: false },
-    ],
   },
   {
     sku: "ORB-TEE-01",
@@ -150,14 +132,6 @@ const DEMO_PRODUCTS: DemoProduct[] = [
     shortInfo: "Heavyweight cotton t-shirt.",
     description:
       "220gsm combed cotton, pre-shrunk, printed with a single-colour Orbit mark.",
-    images: [
-      {
-        url: "https://picsum.photos/seed/orbit-tee-a/800/800",
-        alt: "Orbit Tee, flat lay",
-        position: 1,
-      },
-    ],
-    categories: [{ slug: "apparel", name: "Apparel", isPrimary: true }],
   },
   {
     sku: "ORB-NOTE-01",
@@ -169,87 +143,77 @@ const DEMO_PRODUCTS: DemoProduct[] = [
     shortInfo: "A5 dotted notebook, 192 pages.",
     description:
       "Sewn binding that lies flat, 100gsm bleed-resistant paper, elastic closure.",
-    images: [
-      {
-        url: "https://picsum.photos/seed/orbit-notebook-a/800/800",
-        alt: "Orbit Notebook, cover",
-        position: 1,
-      },
-    ],
-    categories: [{ slug: "stationery", name: "Stationery", isPrimary: true }],
   },
 ];
 
 /**
- * Insert the demo catalog. Idempotent: products conflict on their unique slug,
- * so re-running the seed leaves an existing catalog untouched.
+ * Insert the demo catalog. Idempotent: a product whose slug already exists is
+ * left untouched, so re-running the seed does not duplicate it. Each product
+ * embeds its content and mirrors v1 into the revision history.
  */
 async function seedProducts(authorId: string | null): Promise<void> {
   for (const demo of DEMO_PRODUCTS) {
-    const [product] = await db
-      .insert(products)
-      .values({
-        sku: demo.sku,
-        slug: demo.slug,
-        status: "published",
-        priceCents: demo.priceCents,
-        currency: demo.currency,
-        stockQuantity: demo.stockQuantity,
-        createdBy: authorId,
-      })
-      .onConflictDoNothing({ target: products.slug })
-      .returning({ id: products.id });
-
-    if (!product) {
+    const exists = await productsCollection().findOne(
+      { slug: demo.slug },
+      { projection: { _id: 1 } },
+    );
+    if (exists) {
       log.info({ slug: demo.slug }, "Product already exists — skipped");
       continue;
     }
 
-    const [content] = await db
-      .insert(productContent)
-      .values({
-        productId: product.id,
-        title: demo.title,
-        shortInfo: demo.shortInfo,
-        description: demo.description,
-        images: demo.images,
-        categories: demo.categories,
-        locale: "en",
-        version: 1,
-        updatedBy: authorId,
-      })
-      .returning({ id: productContent.id });
+    const productId = randomUUID();
+    const now = new Date();
+    const content: EmbeddedProductContent = {
+      title: demo.title,
+      shortInfo: demo.shortInfo,
+      description: demo.description,
+      images: [],
+      categories: [],
+      meta: {},
+      reviews: [],
+      locale: "en",
+      version: 1,
+    };
 
-    if (!content) {
-      throw new Error(`Failed to create content for ${demo.slug}`);
-    }
+    await productsCollection().insertOne({
+      _id: productId,
+      sku: demo.sku,
+      slug: demo.slug,
+      status: "published",
+      priceCents: demo.priceCents,
+      currency: demo.currency,
+      inStock: demo.stockQuantity > 0,
+      stockQuantity: demo.stockQuantity,
+      content,
+      media: [],
+      createdBy: authorId,
+      updatedBy: authorId,
+      createdAt: now,
+      updatedAt: now,
+    });
 
     // Mirror v1 into the immutable history so revisions are never empty.
-    await db.insert(productContentRevisions).values({
-      contentId: content.id,
-      productId: product.id,
+    await productContentRevisionsCollection().insertOne({
+      _id: randomUUID(),
+      productId,
       version: 1,
       data: {
         title: demo.title,
         shortInfo: demo.shortInfo,
         description: demo.description,
-        images: demo.images,
-        categories: demo.categories,
+        images: [],
+        categories: [],
         meta: {},
         reviews: [],
         locale: "en",
       },
       changeNote: "Seeded demo product",
       editedBy: authorId,
+      createdAt: now,
     });
 
-    // Publish the content by pointing the product at its live revision.
-    await db
-      .update(products)
-      .set({ currentContentId: content.id })
-      .where(eq(products.id, product.id));
-
-    log.info({ slug: demo.slug, id: product.id }, "Product seeded");
+    log.info({ slug: demo.slug, id: productId }, "Product seeded");
   }
 }
 
@@ -261,11 +225,11 @@ async function seed(): Promise<void> {
 seed()
   .then(async () => {
     log.info("Seed complete");
-    await pool.end();
+    await mongoClient.close();
     process.exit(0);
   })
   .catch(async (error) => {
     log.error({ err: error }, "Seed failed");
-    await pool.end().catch(() => undefined);
+    await mongoClient.close().catch(() => undefined);
     process.exit(1);
   });

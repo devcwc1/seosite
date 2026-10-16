@@ -1,16 +1,14 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
 import type { Filter } from "mongodb";
 
 import { recordAudit } from "@/lib/audit";
-import { db } from "@/lib/db";
 import {
   mediaAssetsCollection,
   productsCollection,
+  usersCollection,
   type MediaAssetDoc,
 } from "@/lib/db/mongo-collections";
-import { users } from "@/lib/db/schema";
 
 import { docToAssetView, type MediaAssetView } from "./asset-view";
 import { referencedAssetIds, usageCounts, usageForAsset } from "./usage";
@@ -148,21 +146,19 @@ export async function getAssetDetail(
 
   const [usage, uploader] = await Promise.all([
     usageForAsset(id),
-    // Uploaders still live in Postgres (users migrate in a later stage).
     row.uploadedBy
-      ? db
-          .select({ email: users.email })
-          .from(users)
-          .where(eq(users.id, row.uploadedBy))
-          .limit(1)
-      : Promise.resolve([]),
+      ? usersCollection().findOne(
+          { _id: row.uploadedBy },
+          { projection: { email: 1 } },
+        )
+      : Promise.resolve(null),
   ]);
 
   return {
     ...toAssetDTO(row, usage.length),
     originalMimeType: row.originalMimeType,
     // Null when the uploader's account is gone — the asset outlives them.
-    uploadedByEmail: uploader[0]?.email ?? null,
+    uploadedByEmail: uploader?.email ?? null,
     usage,
   };
 }

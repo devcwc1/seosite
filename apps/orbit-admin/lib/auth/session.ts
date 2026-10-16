@@ -2,14 +2,32 @@ import "server-only";
 
 import { createHash, randomBytes } from "node:crypto";
 
-import { and, eq, isNull } from "drizzle-orm";
 import { cookies, headers } from "next/headers";
 import type { ResponseCookie } from "next/dist/compiled/@edge-runtime/cookies";
 
-import { db } from "@/lib/db";
-import { sessions, users, type Session, type User } from "@/lib/db/schema";
+import {
+  sessionsCollection,
+  usersCollection,
+  type SessionDoc,
+  type UserDoc,
+} from "@/lib/db/mongo-collections";
+import type { Session, User } from "@/lib/db/schema";
 
 export const SESSION_COOKIE = "orbit_session";
+
+/**
+ * The app has always worked in terms of `id`; the documents use `_id`. These
+ * mappers bridge the two so every caller of `getCurrentSession` et al. keeps
+ * the same `User`/`Session` shape it had under Postgres.
+ */
+function toUser(doc: UserDoc): User {
+  const { _id, ...rest } = doc;
+  return { id: _id, ...rest };
+}
+function toSession(doc: SessionDoc): Session {
+  const { _id, ...rest } = doc;
+  return { id: _id, ...rest };
+}
 
 /**
  * Two clocks (ORB-203). The idle clock slides forward on activity so an active
@@ -51,8 +69,8 @@ export async function createSession(
 
   const hdrs = await headers();
 
-  await db.insert(sessions).values({
-    id: hashToken(token),
+  await sessionsCollection().insertOne({
+    _id: hashToken(token),
     userId,
     mfaVerified: init.mfaVerified ?? false,
     ipAddress:
@@ -62,6 +80,8 @@ export async function createSession(
     userAgent: hdrs.get("user-agent") ?? null,
     expiresAt,
     absoluteExpiresAt,
+    revokedAt: null,
+    createdAt: new Date(),
   });
 
   // The browser keeps the cookie until the absolute cap; the idle timeout is
@@ -115,32 +135,36 @@ export async function clearSessionCookie(): Promise<void> {
 export async function validateSessionToken(
   token: string,
 ): Promise<SessionWithUser | null> {
-  const [row] = await db
-    .select({ session: sessions, user: users })
-    .from(sessions)
-    .innerJoin(users, eq(sessions.userId, users.id))
-    .where(and(eq(sessions.id, hashToken(token)), isNull(sessions.revokedAt)))
-    .limit(1);
+  // Two reads rather than a SQL join: the session by its hashed id (and not
+  // revoked), then the account it belongs to. Both are indexed equality lookups.
+  const sessionDoc = await sessionsCollection().findOne({
+    _id: hashToken(token),
+    revokedAt: null,
+  });
+  if (!sessionDoc) return null;
 
-  if (!row) return null;
+  const userDoc = await usersCollection().findOne({ _id: sessionDoc.userId });
+  if (!userDoc) return null;
 
   const now = Date.now();
-  const { session, user } = row;
 
-  if (now >= session.absoluteExpiresAt.getTime()) return null; // absolute cap
-  if (now >= session.expiresAt.getTime()) return null; // idle timeout
-  if (user.status !== "active") return null; // disabled mid-session
+  if (now >= sessionDoc.absoluteExpiresAt.getTime()) return null; // absolute cap
+  if (now >= sessionDoc.expiresAt.getTime()) return null; // idle timeout
+  if (userDoc.status !== "active") return null; // disabled mid-session
+
+  const session = toSession(sessionDoc);
+  const user = toUser(userDoc);
 
   // Slide the idle clock forward, never past the absolute cap. Throttled so an
   // active session is not one write per request.
   const nextExpiry = new Date(
-    Math.min(now + IDLE_TTL_MS, session.absoluteExpiresAt.getTime()),
+    Math.min(now + IDLE_TTL_MS, sessionDoc.absoluteExpiresAt.getTime()),
   );
-  if (nextExpiry.getTime() - session.expiresAt.getTime() >= SLIDE_THROTTLE_MS) {
-    await db
-      .update(sessions)
-      .set({ expiresAt: nextExpiry })
-      .where(eq(sessions.id, session.id));
+  if (nextExpiry.getTime() - sessionDoc.expiresAt.getTime() >= SLIDE_THROTTLE_MS) {
+    await sessionsCollection().updateOne(
+      { _id: sessionDoc._id },
+      { $set: { expiresAt: nextExpiry } },
+    );
     session.expiresAt = nextExpiry;
   }
 
@@ -164,10 +188,10 @@ export async function markCurrentSessionMfaVerified(): Promise<void> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   if (!token) return;
-  await db
-    .update(sessions)
-    .set({ mfaVerified: true })
-    .where(eq(sessions.id, hashToken(token)));
+  await sessionsCollection().updateOne(
+    { _id: hashToken(token) },
+    { $set: { mfaVerified: true } },
+  );
 }
 
 /**
@@ -178,10 +202,10 @@ export async function markCurrentSessionMfaVerified(): Promise<void> {
  * left untouched so their original revocation time survives.
  */
 export async function revokeUserSessions(userId: string): Promise<void> {
-  await db
-    .update(sessions)
-    .set({ revokedAt: new Date() })
-    .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
+  await sessionsCollection().updateMany(
+    { userId, revokedAt: null },
+    { $set: { revokedAt: new Date() } },
+  );
 }
 
 /**
@@ -193,10 +217,10 @@ export async function destroyCurrentSession(): Promise<void> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   if (token) {
-    await db
-      .update(sessions)
-      .set({ revokedAt: new Date() })
-      .where(and(eq(sessions.id, hashToken(token)), isNull(sessions.revokedAt)));
+    await sessionsCollection().updateOne(
+      { _id: hashToken(token), revokedAt: null },
+      { $set: { revokedAt: new Date() } },
+    );
   }
   store.delete(SESSION_COOKIE);
 }

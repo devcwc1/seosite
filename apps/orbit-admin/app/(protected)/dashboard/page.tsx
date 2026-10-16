@@ -1,5 +1,3 @@
-import { count } from "drizzle-orm";
-
 import {
   Card,
   CardContent,
@@ -7,22 +5,22 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { db } from "@/lib/db";
-import { productsCollection } from "@/lib/db/mongo-collections";
-import { users } from "@/lib/db/schema";
+import {
+  productsCollection,
+  usersCollection,
+} from "@/lib/db/mongo-collections";
 
 export default async function DashboardPage() {
-  // Products live in Mongo; users are still Postgres (migration in progress).
-  const [productCount, publishedCount, userRows] = await Promise.all([
+  const [productCount, publishedCount, userCount] = await Promise.all([
     productsCollection().countDocuments({}),
     productsCollection().countDocuments({ status: "published" }),
-    db.select({ value: count() }).from(users),
+    usersCollection().countDocuments({}),
   ]);
 
   const stats = [
     { label: "Products", value: productCount },
     { label: "Published", value: publishedCount },
-    { label: "Users", value: userRows[0]?.value ?? 0 },
+    { label: "Users", value: userCount },
   ];
 
   return (

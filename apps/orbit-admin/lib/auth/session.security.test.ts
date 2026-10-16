@@ -1,10 +1,11 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
-import { eq, inArray } from "drizzle-orm";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
-import { db, pool } from "@/lib/db";
-import { sessions, users } from "@/lib/db/schema";
+import {
+  sessionsCollection,
+  usersCollection,
+} from "@/lib/db/mongo-collections";
 import { updateUser } from "@/lib/users/mutations";
 import { updateUserSchema } from "@/lib/users/validation";
 
@@ -16,13 +17,12 @@ import {
 } from "./session";
 
 /**
- * ORB-203 security behaviour, against a real Postgres. The parts a mock would
+ * ORB-203 security behaviour, against a real MongoDB. The parts a mock would
  * get wrong: expiry maths across two clocks, revocation, and disabled-account
- * rejection are all decided by the database row, so they are tested there.
+ * rejection are all decided by the stored document, so they are tested there.
  *
- * Sessions are inserted directly with a known raw token (hashed to the primary
- * key), which lets `validateSessionToken` be exercised without a request's
- * cookie jar.
+ * Sessions are inserted directly with a known raw token (hashed to the `_id`),
+ * which lets `validateSessionToken` be exercised without a request's cookie jar.
  */
 
 const HOUR = 1000 * 60 * 60;
@@ -32,17 +32,19 @@ const createdUserIds: string[] = [];
 async function makeUser(
   over: Partial<{ role: "admin" | "editor" | "viewer"; status: "active" | "disabled"; email: string }> = {},
 ): Promise<string> {
-  const [row] = await db
-    .insert(users)
-    .values({
-      email: over.email ?? `sec-${suffix}-${createdUserIds.length}@example.test`,
-      passwordHash: "not-a-real-hash",
-      role: over.role ?? "editor",
-      status: over.status ?? "active",
-    })
-    .returning({ id: users.id });
-  createdUserIds.push(row!.id);
-  return row!.id;
+  const id = randomUUID();
+  await usersCollection().insertOne({
+    _id: id,
+    email: over.email ?? `sec-${suffix}-${createdUserIds.length}@example.test`,
+    passwordHash: "not-a-real-hash",
+    role: over.role ?? "editor",
+    status: over.status ?? "active",
+    mfaEnforced: false,
+    mfaEnrolled: false,
+    createdAt: new Date(),
+  });
+  createdUserIds.push(id);
+  return id;
 }
 
 async function makeSession(
@@ -51,13 +53,16 @@ async function makeSession(
 ): Promise<string> {
   const token = randomBytes(32).toString("base64url");
   const now = Date.now();
-  await db.insert(sessions).values({
-    id: hashToken(token),
+  await sessionsCollection().insertOne({
+    _id: hashToken(token),
     userId,
     mfaVerified: true,
+    ipAddress: null,
+    userAgent: null,
     expiresAt: new Date(now + (over.idleMs ?? 12 * HOUR)),
     absoluteExpiresAt: new Date(now + (over.absoluteMs ?? 7 * 24 * HOUR)),
     revokedAt: over.revoked ? new Date() : null,
+    createdAt: new Date(),
   });
   return token;
 }
@@ -76,10 +81,10 @@ function updateInput(over: Record<string, unknown> = {}) {
 
 afterAll(async () => {
   if (createdUserIds.length) {
-    // Sessions cascade via their FK to users.id.
-    await db.delete(users).where(inArray(users.id, createdUserIds));
+    await usersCollection().deleteMany({ _id: { $in: createdUserIds } });
+    // No FK cascade in MongoDB: remove the sessions explicitly.
+    await sessionsCollection().deleteMany({ userId: { $in: createdUserIds } });
   }
-  await pool.end();
 });
 
 describe("session validation (ORB-203)", () => {
@@ -111,7 +116,10 @@ describe("session validation (ORB-203)", () => {
     const token = await makeSession(userId);
     expect(await validateSessionToken(token)).not.toBeNull();
 
-    await db.update(users).set({ status: "disabled" }).where(eq(users.id, userId));
+    await usersCollection().updateOne(
+      { _id: userId },
+      { $set: { status: "disabled" } },
+    );
 
     // Not revoked, not expired — rejected purely because the user is disabled.
     expect(await validateSessionToken(token)).toBeNull();
@@ -137,9 +145,7 @@ describe("session validation (ORB-203)", () => {
     const userId = await makeUser();
     // Idle expiry only two minutes out; absolute far away, so it can slide.
     const token = await makeSession(userId, { idleMs: 2 * 60 * 1000 });
-    const before = (
-      await db.select().from(sessions).where(eq(sessions.id, hashToken(token))).limit(1)
-    )[0]!;
+    const before = (await sessionsCollection().findOne({ _id: hashToken(token) }))!;
 
     const result = await validateSessionToken(token);
     expect(result).not.toBeNull();
@@ -151,9 +157,7 @@ describe("session validation (ORB-203)", () => {
       before.absoluteExpiresAt.getTime(),
     );
 
-    const after = (
-      await db.select().from(sessions).where(eq(sessions.id, hashToken(token))).limit(1)
-    )[0]!;
+    const after = (await sessionsCollection().findOne({ _id: hashToken(token) }))!;
     expect(after.expiresAt.getTime()).toBe(result!.session.expiresAt.getTime());
   });
 });
@@ -202,7 +206,7 @@ describe("bulk revocation triggers (ORB-203)", () => {
     const result = await updateUser(userId, updateInput({ status: "disabled" }), null);
     expect(result.ok).toBe(true);
 
-    const [row] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    const row = await usersCollection().findOne({ _id: userId });
     expect(row?.status).toBe("disabled");
     expect(await validateSessionToken(token)).toBeNull();
   });
