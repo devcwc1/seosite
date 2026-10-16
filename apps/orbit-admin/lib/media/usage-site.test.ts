@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { db, pool } from "@/lib/db";
-import { categoriesCollection } from "@/lib/db/mongo-collections";
-import { mediaAssets, settings } from "@/lib/db/schema";
+import {
+  categoriesCollection,
+  mediaAssetsCollection,
+  settingsCollection,
+} from "@/lib/db/mongo-collections";
 import { SITE_SEO_SETTING_KEY } from "@/lib/seo/site-settings";
 
 import { deleteAsset, listAssets } from "./assets";
@@ -28,29 +29,37 @@ let logoAsset: string;
 let originalSetting: { value: unknown; description: string | null } | undefined;
 
 async function makeAsset(name: string): Promise<string> {
-  const [row] = await db
-    .insert(mediaAssets)
-    .values({
-      sha256: `us${suffix}${name}`.padEnd(64, "0").slice(0, 64),
-      storageKey: `test/${suffix}/${name}.webp`,
-      format: "webp",
-      mimeType: "image/webp",
-      width: 1200,
-      height: 630,
-      sizeBytes: 100,
-      originalName: `usage-site-${suffix}-${name}.webp`,
-    })
-    .returning({ id: mediaAssets.id });
-  assetIds.push(row!.id);
-  return row!.id;
+  const id = randomUUID();
+  await mediaAssetsCollection().insertOne({
+    _id: id,
+    sha256: `us${suffix}${name}`.padEnd(64, "0").slice(0, 64),
+    storageKey: `test/${suffix}/${name}.webp`,
+    externalUrl: null,
+    thumbKey: null,
+    format: "webp",
+    mimeType: "image/webp",
+    width: 1200,
+    height: 630,
+    sizeBytes: 100,
+    originalName: `usage-site-${suffix}-${name}.webp`,
+    originalMimeType: null,
+    title: null,
+    alt: null,
+    deletedAt: null,
+    uploadedBy: null,
+    createdAt: new Date(),
+  });
+  assetIds.push(id);
+  return id;
 }
 
 beforeAll(async () => {
-  const [existing] = await db
-    .select({ value: settings.value, description: settings.description })
-    .from(settings)
-    .where(eq(settings.key, SITE_SEO_SETTING_KEY));
-  originalSetting = existing;
+  const existing = await settingsCollection().findOne({
+    _id: SITE_SEO_SETTING_KEY,
+  });
+  originalSetting = existing
+    ? { value: existing.value, description: existing.description }
+    : undefined;
 
   categoryAsset = await makeAsset("category");
   defaultOgAsset = await makeAsset("defaultog");
@@ -75,24 +84,31 @@ beforeAll(async () => {
     defaultOgImageAssetId: defaultOgAsset,
     logoAssetId: logoAsset,
   };
-  await db
-    .insert(settings)
-    .values({ key: SITE_SEO_SETTING_KEY, value })
-    .onConflictDoUpdate({ target: settings.key, set: { value } });
+  await settingsCollection().updateOne(
+    { _id: SITE_SEO_SETTING_KEY },
+    { $set: { value } },
+    { upsert: true },
+  );
 });
 
 afterAll(async () => {
   if (originalSetting) {
-    await db
-      .update(settings)
-      .set({ value: originalSetting.value, description: originalSetting.description })
-      .where(eq(settings.key, SITE_SEO_SETTING_KEY));
+    await settingsCollection().updateOne(
+      { _id: SITE_SEO_SETTING_KEY },
+      {
+        $set: {
+          value: originalSetting.value,
+          description: originalSetting.description,
+        },
+      },
+    );
   } else {
-    await db.delete(settings).where(eq(settings.key, SITE_SEO_SETTING_KEY));
+    await settingsCollection().deleteOne({ _id: SITE_SEO_SETTING_KEY });
   }
   await categoriesCollection().deleteOne({ _id: categoryId });
-  for (const id of assetIds) await db.delete(mediaAssets).where(eq(mediaAssets.id, id));
-  await pool.end();
+  if (assetIds.length > 0) {
+    await mediaAssetsCollection().deleteMany({ _id: { $in: assetIds } });
+  }
 });
 
 describe("usage beyond products", () => {

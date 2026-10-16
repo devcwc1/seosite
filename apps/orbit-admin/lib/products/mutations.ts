@@ -2,8 +2,6 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { eq } from "drizzle-orm";
-
 import { recordAudit } from "@/lib/audit";
 import {
   categorySnapshotFromRefs,
@@ -13,9 +11,9 @@ import {
   type ProductCategorySelection,
 } from "@/lib/categories/mutations";
 import { sanitizeRichText } from "@/lib/content/sanitize";
-import { db } from "@/lib/db";
 import { mongoClient } from "@/lib/db/mongo";
 import {
+  mediaAssetsCollection,
   productContentRevisionsCollection,
   productsCollection,
   type EmbeddedProductContent,
@@ -24,7 +22,6 @@ import {
   type ProductMediaRef,
 } from "@/lib/db/mongo-collections";
 import {
-  mediaAssets,
   type ProductContentSnapshot,
   type ProductMeta,
   type ProductReview,
@@ -39,8 +36,8 @@ import type { ProductParsed } from "./validation";
  * Products live in MongoDB. A product document embeds its current content, its
  * ordered media gallery (`media`), and its category refs (`content.categories`)
  * — the Postgres product_content / product_media / product_categories tables
- * are gone. Each save also appends an immutable revision. Media assets are
- * still read from Postgres to resolve URLs for the edit form.
+ * are gone. Each save also appends an immutable revision. Media asset URLs for
+ * the edit form are resolved from the media_assets collection.
  */
 
 export type MutationResult =
@@ -351,12 +348,11 @@ export async function getProductForEdit(
   const ogImageAssetId = product.content.meta?.ogImageAssetId;
   let ogImageUrl = "";
   if (ogImageAssetId) {
-    const [asset] = await db
-      .select({ id: mediaAssets.id, externalUrl: mediaAssets.externalUrl })
-      .from(mediaAssets)
-      .where(eq(mediaAssets.id, ogImageAssetId))
-      .limit(1);
-    if (asset) ogImageUrl = assetUrl(asset);
+    const asset = await mediaAssetsCollection().findOne(
+      { _id: ogImageAssetId },
+      { projection: { externalUrl: 1 } },
+    );
+    if (asset) ogImageUrl = assetUrl({ id: asset._id, externalUrl: asset.externalUrl });
   }
 
   return {

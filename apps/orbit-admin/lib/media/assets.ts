@@ -1,23 +1,18 @@
 import "server-only";
 
-import {
-  and,
-  desc,
-  eq,
-  ilike,
-  inArray,
-  isNull,
-  lt,
-  notInArray,
-  or,
-  sql,
-} from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import type { Filter } from "mongodb";
 
 import { recordAudit } from "@/lib/audit";
 import { db } from "@/lib/db";
-import { productsCollection } from "@/lib/db/mongo-collections";
-import { mediaAssets, users, type MediaAsset } from "@/lib/db/schema";
+import {
+  mediaAssetsCollection,
+  productsCollection,
+  type MediaAssetDoc,
+} from "@/lib/db/mongo-collections";
+import { users } from "@/lib/db/schema";
 
+import { docToAssetView, type MediaAssetView } from "./asset-view";
 import { referencedAssetIds, usageCounts, usageForAsset } from "./usage";
 import type {
   MediaAssetDetailDTO,
@@ -27,8 +22,15 @@ import type {
   ProductMediaItemDTO,
 } from "./types";
 
+/** Escape a user string for safe use inside a Mongo `$regex` search. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /** Served URL for an asset — external URL for backfilled images, else our route. */
-export function assetUrl(asset: Pick<MediaAsset, "id" | "externalUrl">): string {
+export function assetUrl(
+  asset: Pick<MediaAssetView, "id" | "externalUrl">,
+): string {
   return asset.externalUrl ?? `/api/v1/media/file/${asset.id}`;
 }
 
@@ -38,13 +40,13 @@ export function assetUrl(asset: Pick<MediaAsset, "id" | "externalUrl">): string 
  * to the full-size URL rather than making every caller check.
  */
 export function assetThumbUrl(
-  asset: Pick<MediaAsset, "id" | "externalUrl" | "thumbKey">,
+  asset: Pick<MediaAssetView, "id" | "externalUrl" | "thumbKey">,
 ): string {
   if (asset.externalUrl || !asset.thumbKey) return assetUrl(asset);
   return `/api/v1/media/file/${asset.id}?variant=thumb`;
 }
 
-export function toAssetDTO(asset: MediaAsset, usageCount = 0): MediaAssetDTO {
+export function toAssetDTO(asset: MediaAssetView, usageCount = 0): MediaAssetDTO {
   return {
     id: asset.id,
     url: assetUrl(asset),
@@ -77,9 +79,9 @@ const MAX_LIMIT = 100;
 /**
  * A page of the library — ORB-505.
  *
- * Keyset paging on `createdAt` rather than OFFSET: the library is sorted
+ * Keyset paging on `createdAt` rather than skip/limit: the library is sorted
  * newest first and gets uploaded to while someone is paging through it, and
- * an offset would silently skip or repeat a row every time that happens.
+ * a skip would silently drop or repeat a row every time that happens.
  */
 export async function listAssets(
   options: ListAssetsOptions = {},
@@ -88,20 +90,12 @@ export async function listAssets(
   const usage = options.usage ?? "all";
   const limit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
 
-  const filters = [
-    // Soft-deleted assets are gone as far as the library is concerned.
-    isNull(mediaAssets.deletedAt),
-  ];
+  // Soft-deleted assets are gone as far as the library is concerned.
+  const filter: Filter<MediaAssetDoc> = { deletedAt: null };
 
   if (q) {
-    const like = `%${q}%`;
-    filters.push(
-      or(
-        ilike(mediaAssets.originalName, like),
-        ilike(mediaAssets.title, like),
-        ilike(mediaAssets.alt, like),
-      )!,
-    );
+    const rx = { $regex: escapeRegExp(q), $options: "i" };
+    filter.$or = [{ originalName: rx }, { title: rx }, { alt: rx }];
   }
 
   if (usage !== "all") {
@@ -109,33 +103,27 @@ export async function listAssets(
     if (usage === "used") {
       // Nothing is referenced, so nothing can match.
       if (referenced.length === 0) return { items: [], nextCursor: null, total: 0 };
-      filters.push(inArray(mediaAssets.id, referenced));
+      filter._id = { $in: referenced };
     } else if (referenced.length > 0) {
-      filters.push(notInArray(mediaAssets.id, referenced));
+      filter._id = { $nin: referenced };
     }
   }
 
-  const where = and(...filters);
-
-  const totals = await db
-    .select({ total: sql<number>`count(*)::int` })
-    .from(mediaAssets)
-    .where(where);
-  const total = totals[0]?.total ?? 0;
+  const collection = mediaAssetsCollection();
+  const total = await collection.countDocuments(filter);
 
   // One extra row tells us whether another page exists without a second query.
-  const rows = await db
-    .select()
-    .from(mediaAssets)
-    .where(
-      options.cursor
-        ? and(where, lt(mediaAssets.createdAt, new Date(options.cursor)))
-        : where,
-    )
-    .orderBy(desc(mediaAssets.createdAt))
-    .limit(limit + 1);
+  const pageFilter: Filter<MediaAssetDoc> = options.cursor
+    ? { ...filter, createdAt: { $lt: new Date(options.cursor) } }
+    : filter;
 
-  const page = rows.slice(0, limit);
+  const rows = await collection
+    .find(pageFilter)
+    .sort({ createdAt: -1 })
+    .limit(limit + 1)
+    .toArray();
+
+  const page = rows.slice(0, limit).map(docToAssetView);
   const counts = await usageCounts(page.map((row) => row.id));
 
   return {
@@ -154,15 +142,13 @@ export async function listAssets(
 export async function getAssetDetail(
   id: string,
 ): Promise<MediaAssetDetailDTO | null> {
-  const [row] = await db
-    .select()
-    .from(mediaAssets)
-    .where(and(eq(mediaAssets.id, id), isNull(mediaAssets.deletedAt)))
-    .limit(1);
-  if (!row) return null;
+  const doc = await mediaAssetsCollection().findOne({ _id: id, deletedAt: null });
+  if (!doc) return null;
+  const row = docToAssetView(doc);
 
   const [usage, uploader] = await Promise.all([
     usageForAsset(id),
+    // Uploaders still live in Postgres (users migrate in a later stage).
     row.uploadedBy
       ? db
           .select({ email: users.email })
@@ -196,7 +182,7 @@ export async function updateAsset(
   input: UpdateAssetInput,
   actorId: string | null,
 ): Promise<UpdateAssetResult> {
-  const patch: Partial<Pick<MediaAsset, "title" | "alt">> = {};
+  const patch: { title?: string | null; alt?: string | null } = {};
   if (input.title !== undefined) {
     const t = input.title?.trim();
     patch.title = t ? t : null;
@@ -207,21 +193,17 @@ export async function updateAsset(
   }
 
   if (Object.keys(patch).length === 0) {
-    const [row] = await db
-      .select()
-      .from(mediaAssets)
-      .where(eq(mediaAssets.id, id))
-      .limit(1);
-    if (!row) return { ok: false, error: "Not found." };
-    return { ok: true, asset: toAssetDTO(row) };
+    const doc = await mediaAssetsCollection().findOne({ _id: id });
+    if (!doc) return { ok: false, error: "Not found." };
+    return { ok: true, asset: toAssetDTO(docToAssetView(doc)) };
   }
 
-  const [row] = await db
-    .update(mediaAssets)
-    .set(patch)
-    .where(eq(mediaAssets.id, id))
-    .returning();
-  if (!row) return { ok: false, error: "Not found." };
+  const doc = await mediaAssetsCollection().findOneAndUpdate(
+    { _id: id },
+    { $set: patch },
+    { returnDocument: "after" },
+  );
+  if (!doc) return { ok: false, error: "Not found." };
 
   await recordAudit({
     actorId,
@@ -230,45 +212,41 @@ export async function updateAsset(
     metadata: { fields: Object.keys(patch) },
   });
 
-  return { ok: true, asset: toAssetDTO(row) };
+  return { ok: true, asset: toAssetDTO(docToAssetView(doc)) };
 }
 
 export type DeleteAssetResult = { ok: boolean; error?: string };
 
-/** Delete an asset (row + file). Blocked while it's linked to any product. */
+/** Delete an asset (soft). Blocked while it's referenced anywhere. */
 export async function deleteAsset(
   id: string,
   actorId: string | null,
 ): Promise<DeleteAssetResult> {
-  // Galleries and OG references both count. Checking only product_media
-  // would let an asset be deleted while a product page still points at it.
+  // Galleries and OG references both count. Checking only galleries would let
+  // an asset be deleted while a product page still points at it.
   const usage = await usageForAsset(id);
   if (usage.length > 0) {
     return { ok: false, error: "This image is used by one or more products." };
   }
 
-  const [row] = await db
-    .select()
-    .from(mediaAssets)
-    .where(and(eq(mediaAssets.id, id), isNull(mediaAssets.deletedAt)))
-    .limit(1);
-  if (!row) return { ok: false, error: "Not found." };
+  const doc = await mediaAssetsCollection().findOne({ _id: id, deletedAt: null });
+  if (!doc) return { ok: false, error: "Not found." };
 
   // Soft delete: the row and the file stay. Dedupe is by sha256, so a hard
   // delete would leave a re-upload of the same bytes colliding with nothing,
   // while the audit trail still referenced an id that no longer resolved.
   // The stored file is kept deliberately — reclaiming it is a separate,
   // deliberate sweep, not a side effect of one person clicking delete.
-  await db
-    .update(mediaAssets)
-    .set({ deletedAt: new Date() })
-    .where(eq(mediaAssets.id, id));
+  await mediaAssetsCollection().updateOne(
+    { _id: id },
+    { $set: { deletedAt: new Date() } },
+  );
 
   await recordAudit({
     actorId,
     action: "media.deleted",
     target: `media_asset:${id}`,
-    metadata: { sha256: row.sha256 },
+    metadata: { sha256: doc.sha256 },
   });
 
   return { ok: true };
@@ -279,7 +257,7 @@ export async function deleteAsset(
 /**
  * A product's gallery, resolved for display. The ordered refs live on the
  * product document (`media`); the asset metadata (URL, dimensions, fallback
- * alt) is still read from Postgres media_assets. An asset that has since gone
+ * alt) is read from the media_assets collection. An asset that has since gone
  * is skipped rather than rendered broken.
  */
 export async function getProductGallery(
@@ -292,17 +270,13 @@ export async function getProductGallery(
   const media = doc?.media ?? [];
   if (media.length === 0) return [];
 
-  const assetRows = await db
-    .select({
-      id: mediaAssets.id,
-      externalUrl: mediaAssets.externalUrl,
-      alt: mediaAssets.alt,
-      width: mediaAssets.width,
-      height: mediaAssets.height,
-    })
-    .from(mediaAssets)
-    .where(inArray(mediaAssets.id, media.map((m) => m.mediaAssetId)));
-  const byId = new Map(assetRows.map((a) => [a.id, a]));
+  const assetDocs = await mediaAssetsCollection()
+    .find(
+      { _id: { $in: media.map((m) => m.mediaAssetId) } },
+      { projection: { externalUrl: 1, alt: 1, width: 1, height: 1 } },
+    )
+    .toArray();
+  const byId = new Map(assetDocs.map((a) => [a._id, a]));
 
   return [...media]
     .sort((a, b) => a.position - b.position)

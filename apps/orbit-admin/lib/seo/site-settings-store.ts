@@ -1,9 +1,6 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
-
-import { db } from "@/lib/db";
-import { settings } from "@/lib/db/schema";
+import { settingsCollection } from "@/lib/db/mongo-collections";
 import { putSetting } from "@/lib/settings/store";
 
 import {
@@ -13,11 +10,10 @@ import {
 } from "./site-settings";
 
 export async function getSiteSeoSettings(): Promise<SiteSeoSettings> {
-  const [row] = await db
-    .select({ value: settings.value })
-    .from(settings)
-    .where(eq(settings.key, SITE_SEO_SETTING_KEY))
-    .limit(1);
+  const row = await settingsCollection().findOne(
+    { _id: SITE_SEO_SETTING_KEY },
+    { projection: { value: 1 } },
+  );
 
   return parseStoredSiteSeoSettings(row?.value);
 }

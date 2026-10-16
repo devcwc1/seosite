@@ -1,14 +1,17 @@
 import "server-only";
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 
-import { eq } from "drizzle-orm";
 import sharp from "sharp";
 
 import { recordAudit } from "@/lib/audit";
-import { db } from "@/lib/db";
-import { mediaAssets, type MediaAsset } from "@/lib/db/schema";
+import {
+  mediaAssetsCollection,
+  type MediaAssetDoc,
+} from "@/lib/db/mongo-collections";
+
+import { docToAssetView, type MediaAssetView } from "./asset-view";
 
 import {
   ALLOWED_EXTENSIONS,
@@ -32,15 +35,11 @@ import {
   writeAtomic,
 } from "./storage";
 
-export type ProcessResult = { asset: MediaAsset; alreadyInLibrary: boolean };
+export type ProcessResult = { asset: MediaAssetView; alreadyInLibrary: boolean };
 
-async function findBySha(sha256: string): Promise<MediaAsset | undefined> {
-  const [row] = await db
-    .select()
-    .from(mediaAssets)
-    .where(eq(mediaAssets.sha256, sha256))
-    .limit(1);
-  return row;
+async function findBySha(sha256: string): Promise<MediaAssetView | undefined> {
+  const doc = await mediaAssetsCollection().findOne({ sha256 });
+  return doc ? docToAssetView(doc) : undefined;
 }
 
 /**
@@ -101,12 +100,11 @@ export async function processUpload(
     // cannot find it anywhere — dedupe would have matched a row the library
     // hides, and there would be no way to get the image back.
     if (existing.deletedAt) {
-      const [restored] = await db
-        .update(mediaAssets)
-        .set({ deletedAt: null })
-        .where(eq(mediaAssets.id, existing.id))
-        .returning();
-      return { asset: restored ?? existing, alreadyInLibrary: false };
+      await mediaAssetsCollection().updateOne(
+        { _id: existing.id },
+        { $set: { deletedAt: null } },
+      );
+      return { asset: { ...existing, deletedAt: null }, alreadyInLibrary: false };
     }
     return { asset: existing, alreadyInLibrary: true };
   }
@@ -194,33 +192,37 @@ export async function processUpload(
   if (thumb && thumbKey) await writeAtomic(thumbKey, thumb);
 
   // 8. Persist. On a sha256 race, clean up our file and return the winner.
+  const doc: MediaAssetDoc = {
+    _id: randomUUID(),
+    sha256,
+    storageKey,
+    externalUrl: null,
+    thumbKey,
+    format: "webp",
+    mimeType: OUTPUT_MIME,
+    width: outWidth,
+    height: outHeight,
+    sizeBytes: output.length,
+    originalName: file.name || null,
+    originalMimeType: declaredMime || null,
+    title: null,
+    alt: null,
+    deletedAt: null,
+    uploadedBy: actorId,
+    createdAt: new Date(),
+  };
+
   try {
-    const [asset] = await db
-      .insert(mediaAssets)
-      .values({
-        sha256,
-        storageKey,
-        thumbKey,
-        format: "webp",
-        mimeType: OUTPUT_MIME,
-        width: outWidth,
-        height: outHeight,
-        sizeBytes: output.length,
-        originalName: file.name || null,
-        originalMimeType: declaredMime || null,
-        uploadedBy: actorId,
-      })
-      .returning();
-    if (!asset) throw new Error("media_assets insert returned no row");
+    await mediaAssetsCollection().insertOne(doc);
 
     await recordAudit({
       actorId,
       action: "media.uploaded",
-      target: `media_asset:${asset.id}`,
+      target: `media_asset:${doc._id}`,
       metadata: { sha256, sizeBytes: output.length, width: outWidth, height: outHeight },
     });
 
-    return { asset, alreadyInLibrary: false };
+    return { asset: docToAssetView(doc), alreadyInLibrary: false };
   } catch (error) {
     await deleteStored(storageKey);
     const winner = await findBySha(sha256);

@@ -1,17 +1,19 @@
-import { inArray } from "drizzle-orm";
 import type { StorefrontProduct } from "@orbit/next";
 
-import { db } from "@/lib/db";
-import { productsCollection, type ProductDoc } from "@/lib/db/mongo-collections";
-import { mediaAssets, type ProductImage } from "@/lib/db/schema";
+import {
+  mediaAssetsCollection,
+  productsCollection,
+  type ProductDoc,
+} from "@/lib/db/mongo-collections";
+import type { ProductImage } from "@/lib/db/schema";
 
 import { assetUrlsById } from "./assets";
 import { toStorefrontProduct, type StorefrontProductRow } from "./mapper";
 
 /**
  * Read model behind the public storefront API. Products live in MongoDB with
- * their content, gallery and categories embedded; media asset URLs are still
- * resolved from Postgres.
+ * their content, gallery and categories embedded; media asset URLs are
+ * resolved from the media_assets collection.
  */
 
 /** Resolve each product's ordered gallery to display images. */
@@ -27,11 +29,13 @@ async function galleriesByProduct(
     return map;
   }
 
-  const rows = await db
-    .select({ id: mediaAssets.id, externalUrl: mediaAssets.externalUrl, alt: mediaAssets.alt })
-    .from(mediaAssets)
-    .where(inArray(mediaAssets.id, assetIds));
-  const byId = new Map(rows.map((r) => [r.id, r]));
+  const assetDocs = await mediaAssetsCollection()
+    .find(
+      { _id: { $in: assetIds } },
+      { projection: { externalUrl: 1, alt: 1 } },
+    )
+    .toArray();
+  const byId = new Map(assetDocs.map((a) => [a._id, a]));
 
   for (const d of docs) {
     const images: ProductImage[] = [...d.media]

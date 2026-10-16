@@ -1,9 +1,11 @@
-import { eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { db, pool } from "@/lib/db";
-import { productsCollection } from "@/lib/db/mongo-collections";
-import { mediaAssets } from "@/lib/db/schema";
+import {
+  mediaAssetsCollection,
+  productsCollection,
+} from "@/lib/db/mongo-collections";
 import { createProduct, deleteProduct } from "@/lib/products/mutations";
 import { productInputSchema } from "@/lib/products/validation";
 
@@ -11,32 +13,41 @@ import { listAssets } from "./assets";
 import { referencedAssetIds, usageCounts, usageForAsset } from "./usage";
 
 /**
- * Integration, against a real Postgres — ORB-505's QA note asks for it, and
- * usage is a join across three tables plus a JSON field, which is precisely
- * the shape of thing a mock would get wrong convincingly.
+ * Integration, against a real MongoDB — ORB-505's QA note asks for it, and
+ * usage spans embedded galleries and a nested meta field across collections,
+ * which is precisely the shape of thing a mock would get wrong convincingly.
  */
 
 const suffix = Date.now().toString(36);
 const productIds: string[] = [];
 const assetIds: string[] = [];
+let makeAssetSeq = 0;
 
-/** An asset row with no file behind it; nothing here reads the bytes. */
+/** An asset doc with no file behind it; nothing here reads the bytes. */
 async function makeAsset(name: string): Promise<string> {
-  const [row] = await db
-    .insert(mediaAssets)
-    .values({
-      sha256: `${suffix}${name}`.padEnd(64, "0").slice(0, 64),
-      storageKey: `test/${suffix}/${name}.webp`,
-      format: "webp",
-      mimeType: "image/webp",
-      width: 800,
-      height: 600,
-      sizeBytes: 1234,
-      originalName: `${name}-${suffix}.webp`,
-    })
-    .returning({ id: mediaAssets.id });
-  assetIds.push(row!.id);
-  return row!.id;
+  const id = randomUUID();
+  await mediaAssetsCollection().insertOne({
+    _id: id,
+    sha256: `${suffix}${name}`.padEnd(64, "0").slice(0, 64),
+    storageKey: `test/${suffix}/${name}.webp`,
+    externalUrl: null,
+    thumbKey: null,
+    format: "webp",
+    mimeType: "image/webp",
+    width: 800,
+    height: 600,
+    sizeBytes: 1234,
+    originalName: `${name}-${suffix}.webp`,
+    originalMimeType: null,
+    title: null,
+    alt: null,
+    deletedAt: null,
+    uploadedBy: null,
+    // Stagger so keyset paging on createdAt has a stable, distinct order.
+    createdAt: new Date(Date.now() + makeAssetSeq++),
+  });
+  assetIds.push(id);
+  return id;
 }
 
 async function makeProduct(key: string, title: string): Promise<string> {
@@ -105,8 +116,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   for (const id of productIds) await deleteProduct(id, null);
-  for (const id of assetIds) await db.delete(mediaAssets).where(eq(mediaAssets.id, id));
-  await pool.end();
+  if (assetIds.length > 0) {
+    await mediaAssetsCollection().deleteMany({ _id: { $in: assetIds } });
+  }
 });
 
 describe("usageForAsset", () => {

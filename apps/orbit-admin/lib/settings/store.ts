@@ -1,15 +1,12 @@
 import "server-only";
 
-import { eq, inArray } from "drizzle-orm";
-
-import { db } from "@/lib/db";
-import { settings } from "@/lib/db/schema";
+import { settingsCollection } from "@/lib/db/mongo-collections";
 
 /**
- * Typed access to the `settings` table.
+ * Typed access to the `settings` collection (keyed by the setting key as `_id`).
  *
- * Values are jsonb, so every read is validated on the way out: a hand-edited
- * row must not be able to put a string where money is expected.
+ * Values are arbitrary documents, so every read is validated on the way out: a
+ * hand-edited row must not be able to put a string where money is expected.
  */
 export const SETTING_KEYS = {
   shippingCents: "order.shipping_cents",
@@ -41,17 +38,11 @@ function fromEnv(name: string): number {
 }
 
 export async function getOrderMoneySettings(): Promise<OrderMoneySettings> {
-  const rows = await db
-    .select()
-    .from(settings)
-    .where(
-      inArray(settings.key, [
-        SETTING_KEYS.shippingCents,
-        SETTING_KEYS.taxRateBp,
-      ]),
-    );
+  const rows = await settingsCollection()
+    .find({ _id: { $in: [SETTING_KEYS.shippingCents, SETTING_KEYS.taxRateBp] } })
+    .toArray();
 
-  const byKey = new Map(rows.map((row) => [row.key, row.value]));
+  const byKey = new Map(rows.map((row) => [row._id, row.value]));
 
   return {
     shippingCents:
@@ -65,8 +56,10 @@ export async function getOrderMoneySettings(): Promise<OrderMoneySettings> {
 
 /** Whether a value has been set explicitly, as opposed to inherited. */
 export async function getConfiguredKeys(): Promise<Set<string>> {
-  const rows = await db.select({ key: settings.key }).from(settings);
-  return new Set(rows.map((row) => row.key));
+  const rows = await settingsCollection()
+    .find({}, { projection: { _id: 1 } })
+    .toArray();
+  return new Set(rows.map((row) => row._id));
 }
 
 export async function putSetting(
@@ -75,15 +68,13 @@ export async function putSetting(
   description: string,
   actorId: string | null,
 ): Promise<void> {
-  await db
-    .insert(settings)
-    .values({ key, value, description, updatedBy: actorId })
-    .onConflictDoUpdate({
-      target: settings.key,
-      set: { value, description, updatedBy: actorId, updatedAt: new Date() },
-    });
+  await settingsCollection().updateOne(
+    { _id: key },
+    { $set: { value, description, updatedBy: actorId, updatedAt: new Date() } },
+    { upsert: true },
+  );
 }
 
 export async function deleteSetting(key: string): Promise<void> {
-  await db.delete(settings).where(eq(settings.key, key));
+  await settingsCollection().deleteOne({ _id: key });
 }

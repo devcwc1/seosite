@@ -1,11 +1,9 @@
 import { createHash } from "node:crypto";
 
-import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { db, pool } from "@/lib/db";
-import { mediaAssets } from "@/lib/db/schema";
+import { mediaAssetsCollection } from "@/lib/db/mongo-collections";
 import { MAX_UPLOAD_BYTES } from "@/lib/media/constants";
 import { UploadError } from "@/lib/media/errors";
 import { processUpload } from "@/lib/media/process";
@@ -57,18 +55,13 @@ async function upload(file: File) {
 
 afterAll(async () => {
   for (const id of createdIds) {
-    const [row] = await db
-      .select()
-      .from(mediaAssets)
-      .where(eq(mediaAssets.id, id))
-      .limit(1);
+    const row = await mediaAssetsCollection().findOne({ _id: id });
     if (row?.storageKey) await deleteStored(row.storageKey);
     // An upload now writes a thumbnail too; leaving it behind orphans a file
     // on the media volume every time this suite runs.
     if (row?.thumbKey) await deleteStored(row.thumbKey);
-    await db.delete(mediaAssets).where(eq(mediaAssets.id, id));
+    await mediaAssetsCollection().deleteOne({ _id: id });
   }
-  await pool.end();
 });
 
 describe("ORB-501 upload security (integration)", () => {
@@ -86,11 +79,7 @@ describe("ORB-501 upload security (integration)", () => {
     const r = await upload(
       await makeImageFile({ format: "jpeg", width: 300, height: 300 }),
     );
-    const [row] = await db
-      .select()
-      .from(mediaAssets)
-      .where(eq(mediaAssets.id, r.asset.id))
-      .limit(1);
+    const row = await mediaAssetsCollection().findOne({ _id: r.asset.id });
     expect(row).toBeTruthy();
 
     const sha = row!.sha256;
@@ -119,8 +108,7 @@ describe("ORB-501 upload security (integration)", () => {
     // test files can't perturb it — dedupe means it stays exactly 1.
     const sha = createHash("sha256").update(bytes).digest("hex");
     const countBySha = async () =>
-      (await db.select().from(mediaAssets).where(eq(mediaAssets.sha256, sha)))
-        .length;
+      mediaAssetsCollection().countDocuments({ sha256: sha });
     const before = await countBySha();
     const second = await processUpload(
       new File([bytes], "b.png", { type: "image/png" }),
@@ -220,11 +208,7 @@ describe("ORB-501 upload security (integration)", () => {
         extra: marker,
       }),
     );
-    const [row] = await db
-      .select()
-      .from(mediaAssets)
-      .where(eq(mediaAssets.id, r.asset.id))
-      .limit(1);
+    const row = await mediaAssetsCollection().findOne({ _id: r.asset.id });
     expect(row?.storageKey).toBeTruthy();
     const stored = await readStored(row!.storageKey!);
     expect(stored.includes(Buffer.from(marker))).toBe(false);

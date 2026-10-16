@@ -1,8 +1,8 @@
-import { eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+
 import { afterAll, describe, expect, it } from "vitest";
 
-import { db, pool } from "@/lib/db";
-import { mediaAssets } from "@/lib/db/schema";
+import { mediaAssetsCollection } from "@/lib/db/mongo-collections";
 import { deleteAsset } from "@/lib/media/assets";
 import { usageForAsset } from "@/lib/media/usage";
 
@@ -25,21 +25,28 @@ const productIds: string[] = [];
 const assetIds: string[] = [];
 
 async function makeAsset(name: string): Promise<string> {
-  const [row] = await db
-    .insert(mediaAssets)
-    .values({
-      sha256: `og${suffix}${name}`.padEnd(64, "0").slice(0, 64),
-      storageKey: `test/${suffix}/${name}.webp`,
-      format: "webp",
-      mimeType: "image/webp",
-      width: 1200,
-      height: 630,
-      sizeBytes: 4242,
-      originalName: `og-${suffix}-${name}.webp`,
-    })
-    .returning({ id: mediaAssets.id });
-  assetIds.push(row!.id);
-  return row!.id;
+  const id = randomUUID();
+  await mediaAssetsCollection().insertOne({
+    _id: id,
+    sha256: `og${suffix}${name}`.padEnd(64, "0").slice(0, 64),
+    storageKey: `test/${suffix}/${name}.webp`,
+    externalUrl: null,
+    thumbKey: null,
+    format: "webp",
+    mimeType: "image/webp",
+    width: 1200,
+    height: 630,
+    sizeBytes: 4242,
+    originalName: `og-${suffix}-${name}.webp`,
+    originalMimeType: null,
+    title: null,
+    alt: null,
+    deletedAt: null,
+    uploadedBy: null,
+    createdAt: new Date(),
+  });
+  assetIds.push(id);
+  return id;
 }
 
 function input(ogImageAssetId: string, key: string): ProductParsed {
@@ -70,8 +77,9 @@ async function create(ogImageAssetId: string, key: string): Promise<string> {
 
 afterAll(async () => {
   for (const id of productIds) await deleteProduct(id, null);
-  for (const id of assetIds) await db.delete(mediaAssets).where(eq(mediaAssets.id, id));
-  await pool.end();
+  if (assetIds.length > 0) {
+    await mediaAssetsCollection().deleteMany({ _id: { $in: assetIds } });
+  }
 });
 
 describe("the OG image field", () => {

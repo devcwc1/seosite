@@ -2,13 +2,14 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { eq } from "drizzle-orm";
-
 import { recordAudit } from "@/lib/audit";
 import { sanitizeRichText } from "@/lib/content/sanitize";
-import { db } from "@/lib/db";
-import { postsCollection, type PostDoc } from "@/lib/db/mongo-collections";
-import { mediaAssets, type PostStatus, type ProductMeta } from "@/lib/db/schema";
+import {
+  mediaAssetsCollection,
+  postsCollection,
+  type PostDoc,
+} from "@/lib/db/mongo-collections";
+import { type PostStatus, type ProductMeta } from "@/lib/db/schema";
 import { assetUrl } from "@/lib/media/assets";
 import { toStoredMeta } from "@/lib/seo/meta";
 
@@ -205,12 +206,11 @@ export async function getPostForEdit(id: string): Promise<PostEditData | null> {
 
   let coverImageUrl = "";
   if (post.coverImageAssetId) {
-    const [asset] = await db
-      .select({ id: mediaAssets.id, externalUrl: mediaAssets.externalUrl })
-      .from(mediaAssets)
-      .where(eq(mediaAssets.id, post.coverImageAssetId))
-      .limit(1);
-    if (asset) coverImageUrl = assetUrl(asset);
+    const asset = await mediaAssetsCollection().findOne(
+      { _id: post.coverImageAssetId },
+      { projection: { externalUrl: 1 } },
+    );
+    if (asset) coverImageUrl = assetUrl({ id: asset._id, externalUrl: asset.externalUrl });
   }
 
   return {

@@ -1,10 +1,10 @@
-import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { db, pool } from "@/lib/db";
-import { productsCollection } from "@/lib/db/mongo-collections";
-import { mediaAssets } from "@/lib/db/schema";
+import {
+  mediaAssetsCollection,
+  productsCollection,
+} from "@/lib/db/mongo-collections";
 import {
   linkAssetToProduct,
   unlinkAssetFromProduct,
@@ -81,15 +81,10 @@ async function galleryOf(productId: string) {
 afterAll(async () => {
   for (const id of productIds) await deleteProduct(id, null);
   for (const id of assetIds) {
-    const [row] = await db
-      .select()
-      .from(mediaAssets)
-      .where(eq(mediaAssets.id, id))
-      .limit(1);
+    const row = await mediaAssetsCollection().findOne({ _id: id });
     if (row?.storageKey) await deleteStored(row.storageKey);
-    await db.delete(mediaAssets).where(eq(mediaAssets.id, id));
+    await mediaAssetsCollection().deleteOne({ _id: id });
   }
-  await pool.end();
 });
 
 describe("product gallery round-trip (ORB-501)", () => {

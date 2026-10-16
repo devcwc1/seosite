@@ -1,4 +1,3 @@
-import { inArray } from "drizzle-orm";
 import Link from "next/link";
 import { Plus, Upload } from "lucide-react";
 
@@ -14,9 +13,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { getCurrentSession, isWriter } from "@/lib/auth/session";
-import { db } from "@/lib/db";
-import { productsCollection } from "@/lib/db/mongo-collections";
-import { mediaAssets } from "@/lib/db/schema";
+import {
+  mediaAssetsCollection,
+  productsCollection,
+} from "@/lib/db/mongo-collections";
 import { formatPrice } from "@/lib/format";
 
 type Thumb = { url: string; alt: string | null };
@@ -42,17 +42,19 @@ export default async function ProductsPage() {
   }));
 
   // Primary image per product from the embedded gallery (ORB-501); asset URLs
-  // are still resolved from Postgres media_assets (migration in progress).
+  // are resolved from the media_assets collection.
   const primaryByProduct = new Map<string, Thumb>();
   const assetIds = [
     ...new Set(docs.flatMap((d) => d.media.map((m) => m.mediaAssetId))),
   ];
   if (assetIds.length > 0) {
-    const assets = await db
-      .select({ id: mediaAssets.id, externalUrl: mediaAssets.externalUrl, alt: mediaAssets.alt })
-      .from(mediaAssets)
-      .where(inArray(mediaAssets.id, assetIds));
-    const byId = new Map(assets.map((a) => [a.id, a]));
+    const assets = await mediaAssetsCollection()
+      .find(
+        { _id: { $in: assetIds } },
+        { projection: { externalUrl: 1, alt: 1 } },
+      )
+      .toArray();
+    const byId = new Map(assets.map((a) => [a._id, a]));
     for (const d of docs) {
       const primary = [...d.media].sort((a, b) => a.position - b.position)[0];
       if (!primary) continue;

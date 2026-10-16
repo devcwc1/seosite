@@ -2,16 +2,13 @@ import "server-only";
 
 import type { Collection, Document } from "mongodb";
 
-import { eq, sql } from "drizzle-orm";
-
-import { db } from "@/lib/db";
 import {
   categoriesCollection,
   pagesCollection,
   postsCollection,
   productsCollection,
+  settingsCollection,
 } from "@/lib/db/mongo-collections";
-import { settings } from "@/lib/db/schema";
 import { SITE_SEO_SETTING_KEY } from "@/lib/seo/site-settings";
 
 /**
@@ -46,17 +43,25 @@ export type MediaUsageRef = {
   href: string;
 };
 
-const SITE_DEFAULT_OG = sql<string | null>`${settings.value} ->> 'defaultOgImageAssetId'`;
-const SITE_LOGO = sql<string | null>`${settings.value} ->> 'logoAssetId'`;
-
 type IdTitle = { id: string; title: string };
 
-function siteSettings() {
-  return db
-    .select({ defaultOg: SITE_DEFAULT_OG, logo: SITE_LOGO })
-    .from(settings)
-    .where(eq(settings.key, SITE_SEO_SETTING_KEY))
-    .limit(1);
+/** The site-wide default OG image and logo asset ids, from settings. */
+async function siteImageIds(): Promise<{
+  defaultOg: string | null;
+  logo: string | null;
+}> {
+  const row = await settingsCollection().findOne(
+    { _id: SITE_SEO_SETTING_KEY },
+    { projection: { value: 1 } },
+  );
+  const value = (row?.value ?? {}) as {
+    defaultOgImageAssetId?: string | null;
+    logoAssetId?: string | null;
+  };
+  return {
+    defaultOg: value.defaultOgImageAssetId ?? null,
+    logo: value.logoAssetId ?? null,
+  };
 }
 
 /**
@@ -102,7 +107,7 @@ export async function usageForAsset(assetId: string): Promise<MediaUsageRef[]> {
         .toArray()
         .then((docs): IdTitle[] => docs.map((d) => ({ id: d._id, title: d.title }))),
 
-      siteSettings(),
+      siteImageIds(),
     ]);
 
   const refs: MediaUsageRef[] = [
@@ -144,7 +149,7 @@ export async function usageForAsset(assetId: string): Promise<MediaUsageRef[]> {
     })),
   ];
 
-  const siteRow = site[0];
+  const siteRow = site;
   if (siteRow?.defaultOg === assetId) {
     refs.push({
       kind: "siteDefaultOgImage",
@@ -223,7 +228,7 @@ export async function usageCounts(
       mongoCounts(postsCollection(), "coverImageAssetId", assetIds),
       mongoCounts(postsCollection(), "meta.ogImageAssetId", assetIds),
       mongoCounts(pagesCollection(), "meta.ogImageAssetId", assetIds),
-      siteSettings(),
+      siteImageIds(),
     ]);
 
   for (const row of gallery) add(row.assetId, row.n);
@@ -234,7 +239,7 @@ export async function usageCounts(
   for (const row of pageOg) add(row.assetId, row.n);
 
   const wanted = new Set(assetIds);
-  const siteRow = site[0];
+  const siteRow = site;
   if (siteRow?.defaultOg && wanted.has(siteRow.defaultOg)) add(siteRow.defaultOg, 1);
   if (siteRow?.logo && wanted.has(siteRow.logo)) add(siteRow.logo, 1);
 
@@ -266,7 +271,7 @@ export async function referencedAssetIds(): Promise<Set<string>> {
       mongoDistinct(postsCollection(), "coverImageAssetId"),
       mongoDistinct(postsCollection(), "meta.ogImageAssetId"),
       mongoDistinct(pagesCollection(), "meta.ogImageAssetId"),
-      siteSettings(),
+      siteImageIds(),
     ]);
 
   const ids = new Set<string>();
@@ -276,7 +281,7 @@ export async function referencedAssetIds(): Promise<Set<string>> {
   for (const id of postCover) ids.add(id);
   for (const id of postOg) ids.add(id);
   for (const id of pageOg) ids.add(id);
-  if (site[0]?.defaultOg) ids.add(site[0].defaultOg);
-  if (site[0]?.logo) ids.add(site[0].logo);
+  if (site.defaultOg) ids.add(site.defaultOg);
+  if (site.logo) ids.add(site.logo);
   return ids;
 }
