@@ -1,7 +1,7 @@
 import "server-only";
 
 import { isAdmin } from "@/lib/auth/session";
-import type { User } from "@/lib/db/schema";
+import type { User } from "@/lib/db/model-types";
 
 /**
  * Navigation is computed on the server from the session's role — FR-SEC-006.

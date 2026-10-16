@@ -11,7 +11,7 @@ import {
   type SessionDoc,
   type UserDoc,
 } from "@/lib/db/mongo-collections";
-import type { Session, User } from "@/lib/db/schema";
+import type { Session, User } from "@/lib/db/model-types";
 
 export const SESSION_COOKIE = "orbit_session";
 

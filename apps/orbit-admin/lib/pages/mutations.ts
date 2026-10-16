@@ -9,7 +9,7 @@ import {
   pagesCollection,
   type PageDoc,
 } from "@/lib/db/mongo-collections";
-import { type PageStatus, type ProductMeta } from "@/lib/db/schema";
+import { type PageStatus, type ProductMeta } from "@/lib/db/model-types";
 import { assetUrl } from "@/lib/media/assets";
 import { toStoredMeta } from "@/lib/seo/meta";
 

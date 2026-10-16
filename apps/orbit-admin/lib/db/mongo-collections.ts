@@ -11,8 +11,9 @@ import type {
   ProductMeta,
   ProductReview,
   ProductStatus,
+  UserRoleValue,
   UserStatusValue,
-} from "./schema";
+} from "./model-types";
 
 /**
  * The MongoDB document model (migration in progress).
@@ -25,11 +26,9 @@ import type {
  *
  * Ids are the same string UUIDs the Postgres rows used (and the sha256 string
  * for sessions), kept as `_id` so existing identifiers and URLs are preserved.
- * Timestamps are native `Date`s. The shared JSON shapes (ProductImage, …) are
- * reused verbatim from the Drizzle schema so the two never drift.
+ * Timestamps are native `Date`s. The shared JSON shapes (ProductImage, …) live
+ * in `./model-types` and are reused here so the two never drift.
  */
-
-type UserRoleValue = "admin" | "editor" | "viewer";
 
 export const COLLECTIONS = {
   users: "users",

@@ -9,7 +9,7 @@ import {
   postsCollection,
   type PostDoc,
 } from "@/lib/db/mongo-collections";
-import { type PostStatus, type ProductMeta } from "@/lib/db/schema";
+import { type PostStatus, type ProductMeta } from "@/lib/db/model-types";
 import { assetUrl } from "@/lib/media/assets";
 import { toStoredMeta } from "@/lib/seo/meta";
 

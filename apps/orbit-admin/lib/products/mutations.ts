@@ -26,7 +26,7 @@ import {
   type ProductMeta,
   type ProductReview,
   type ProductStatus,
-} from "@/lib/db/schema";
+} from "@/lib/db/model-types";
 import { assetUrl, getProductGallery } from "@/lib/media/assets";
 import { toStoredMeta } from "@/lib/seo/meta";
 

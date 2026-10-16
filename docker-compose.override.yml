@@ -1,16 +1,13 @@
 # Local development overrides (auto-merged by `docker compose`).
 #
-# Publishes Postgres to the host so the host-run dev server (`npm run dev`),
-# drizzle-kit migrations and the seed script can reach it at localhost:5432.
-# Credentials come from the root .env (single source of truth) — see .env.template.
+# Publishes MongoDB to the host so the host-run dev server (`npm run dev`) and
+# the seed script can reach it at localhost:27017. Credentials/URI come from the
+# root .env (single source of truth) — see .env.template.
 #
 # NOT for production: on a server, run with only the base file
-# (`docker compose -f docker-compose.yml up`) so Postgres stays internal.
+# (`docker compose -f docker-compose.yml up`) so MongoDB stays internal.
 
 services:
-  postgres:
-    ports:
-      - "5432:5432"
   mongo:
     ports:
       - "27017:27017"

@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 
 import { setOrderStatusAction } from "@/app/(protected)/orders/actions";
 import { Button } from "@/components/ui/button";
-import type { OrderStatus } from "@/lib/db/schema";
+import type { OrderStatus } from "@/lib/db/model-types";
 
 const LABELS: Record<OrderStatus, string> = {
   pending: "Back to pending",

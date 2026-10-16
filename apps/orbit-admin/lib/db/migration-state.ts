@@ -1,20 +1,21 @@
 /**
- * Boot-migration readiness flag.
+ * Startup readiness flag.
  *
- * The flag is stashed on `globalThis` so the value set by the migration runner
- * (invoked from `instrumentation.ts`) is observable from route handlers such as
- * `/api/health`, even if Next builds them into separate module instances.
+ * Set once the boot step in `instrumentation.ts` has ensured the MongoDB
+ * indexes exist. The flag is stashed on `globalThis` so it is observable from
+ * route handlers such as `/api/health`, even if Next builds them into separate
+ * module instances.
  */
 const globalForMigration = globalThis as unknown as {
   __orbitMigrationComplete?: boolean;
 };
 
-/** Mark the boot migrations as finished (or reset the flag). */
+/** Mark startup DB preparation as finished (or reset the flag). */
 export function setMigrationComplete(value: boolean): void {
   globalForMigration.__orbitMigrationComplete = value;
 }
 
-/** True once boot migrations have completed successfully. */
+/** True once startup DB preparation (index ensuring) has completed. */
 export function isMigrationComplete(): boolean {
   return globalForMigration.__orbitMigrationComplete === true;
 }

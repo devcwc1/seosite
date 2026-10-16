@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { getCurrentSession, isWriter } from "@/lib/auth/session";
 import { setOrderStatus, type StatusChangeResult } from "@/lib/orders/mutations";
-import { orderStatus } from "@/lib/db/schema";
+import { ORDER_STATUSES, type OrderStatus } from "@/lib/db/model-types";
 
 /** Move an order along its lifecycle. Viewers may read orders, not change them. */
 export async function setOrderStatusAction(
@@ -20,15 +20,11 @@ export async function setOrderStatusAction(
   const next = String(formData.get("status") ?? "");
 
   if (!id) return { ok: false, error: "Missing order." };
-  if (!orderStatus.enumValues.includes(next as never)) {
+  if (!ORDER_STATUSES.includes(next as OrderStatus)) {
     return { ok: false, error: "Unknown status." };
   }
 
-  const result = await setOrderStatus(
-    id,
-    next as (typeof orderStatus.enumValues)[number],
-    session.user.id,
-  );
+  const result = await setOrderStatus(id, next as OrderStatus, session.user.id);
 
   if (result.ok) {
     revalidatePath("/orders");

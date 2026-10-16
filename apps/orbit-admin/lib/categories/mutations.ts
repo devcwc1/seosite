@@ -9,7 +9,7 @@ import {
   type CategoryDoc,
   type ProductCategoryRef,
 } from "@/lib/db/mongo-collections";
-import type { ProductMeta } from "@/lib/db/schema";
+import type { ProductMeta } from "@/lib/db/model-types";
 import { toStoredMeta } from "@/lib/seo/meta";
 
 import type { CategoryParsed } from "./validation";

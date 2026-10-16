@@ -15,31 +15,42 @@ jobs:
     runs-on: ubuntu-latest
 
     # The admin suite is deliberately integration-first: it asserts against a
-    # real Postgres rather than a mock, because the things worth testing here
-    # are constraints, cascades and transactions, and a mock has none.
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: orbit
-          POSTGRES_PASSWORD: orbit
-          POSTGRES_DB: orbit_admin
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U orbit -d orbit_admin"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
+    # real MongoDB rather than a mock, because the things worth testing here are
+    # uniqueness, embedded-document shape and transactions, and a mock has none.
+    #
+    # MongoDB transactions need a replica set, and a GitHub `services:` container
+    # cannot be given the `--replSet` flag, so Mongo is started here as a step
+    # and initiated as a single-node set — mirroring the dev docker-compose.
     env:
-      DATABASE_URL: postgres://orbit:orbit@localhost:5432/orbit_admin
+      MONGODB_URI: mongodb://localhost:27017/orbit_admin?directConnection=true
+      MONGO_DB: orbit_admin
       # Order intake refuses writes without it, so the suite needs one set.
       ORBIT_WRITE_TOKEN: ci-write-token
       MEDIA_DIR: ${{ github.workspace }}/.ci-media
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Start MongoDB (single-node replica set)
+        run: |
+          docker run -d --name mongo -p 27017:27017 mongo:7 \
+            --replSet rs0 --bind_ip_all
+          # Wait for mongod to accept connections.
+          for i in $(seq 1 30); do
+            if docker exec mongo mongosh --quiet --eval 'db.adminCommand("ping")' >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          docker exec mongo mongosh --quiet --eval \
+            "rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]})"
+          # Wait until a writable primary is elected.
+          for i in $(seq 1 30); do
+            if docker exec mongo mongosh --quiet --eval 'quit(db.hello().isWritablePrimary ? 0 : 1)'; then
+              break
+            fi
+            sleep 1
+          done
 
       - uses: actions/setup-node@v4
         with:
@@ -48,8 +59,8 @@ jobs:
 
       - run: npm ci
 
-      - name: Apply migrations
-        run: npm run db:migrate
+      - name: Ensure indexes
+        run: npm run db:indexes
 
       - name: Lint
         run: npm run lint

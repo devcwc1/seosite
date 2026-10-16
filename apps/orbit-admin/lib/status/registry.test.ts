@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  orderStatus,
-  pageStatus,
-  postStatus,
-  productStatus,
-  userRole,
-  userStatus,
-} from "@/lib/db/schema";
+  ORDER_STATUSES,
+  PAGE_STATUSES,
+  POST_STATUSES,
+  PRODUCT_STATUSES,
+  USER_ROLES,
+  USER_STATUSES,
+} from "@/lib/db/model-types";
 
 import {
   LIVE_DOMAINS,
@@ -30,22 +30,22 @@ describe("the canonical status registry", () => {
     // `refunded` to the order enum, this fails before a screen can invent a
     // colour for it.
     expect(Object.keys(STATUS_REGISTRY.product).sort()).toEqual(
-      [...productStatus.enumValues].sort(),
+      [...PRODUCT_STATUSES].sort(),
     );
     expect(Object.keys(STATUS_REGISTRY.post).sort()).toEqual(
-      [...postStatus.enumValues].sort(),
+      [...POST_STATUSES].sort(),
     );
     expect(Object.keys(STATUS_REGISTRY.page).sort()).toEqual(
-      [...pageStatus.enumValues].sort(),
+      [...PAGE_STATUSES].sort(),
     );
     expect(Object.keys(STATUS_REGISTRY.order).sort()).toEqual(
-      [...orderStatus.enumValues].sort(),
+      [...ORDER_STATUSES].sort(),
     );
     expect(Object.keys(STATUS_REGISTRY.role).sort()).toEqual(
-      [...userRole.enumValues].sort(),
+      [...USER_ROLES].sort(),
     );
     expect(Object.keys(STATUS_REGISTRY.account).sort()).toEqual(
-      [...userStatus.enumValues].sort(),
+      [...USER_STATUSES].sort(),
     );
   });
 

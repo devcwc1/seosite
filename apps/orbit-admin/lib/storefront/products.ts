@@ -5,7 +5,7 @@ import {
   productsCollection,
   type ProductDoc,
 } from "@/lib/db/mongo-collections";
-import type { ProductImage } from "@/lib/db/schema";
+import type { ProductImage } from "@/lib/db/model-types";
 
 import { assetUrlsById } from "./assets";
 import { toStorefrontProduct, type StorefrontProductRow } from "./mapper";

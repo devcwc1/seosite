@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { pool } from "@/lib/db";
 import { ordersCollection } from "@/lib/db/mongo-collections";
 import { ensureIndexes } from "@/lib/db/mongo-indexes";
 import { createProduct, deleteProduct } from "@/lib/products/mutations";
@@ -76,7 +75,6 @@ afterAll(async () => {
     await ordersCollection().deleteMany({ _id: { $in: created } });
   }
   if (productId) await deleteProduct(productId, null);
-  await pool.end();
   // The shared Mongo client is closed by test/setup.ts.
 });
 

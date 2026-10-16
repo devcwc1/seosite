@@ -9,7 +9,7 @@ import {
   type EmbeddedOrderItem,
   type OrderDoc,
 } from "@/lib/db/mongo-collections";
-import { type OrderStatus } from "@/lib/db/schema";
+import { type OrderStatus } from "@/lib/db/model-types";
 import { getOrderMoneySettings } from "@/lib/settings/store";
 
 import type { OrderInput } from "./validation";

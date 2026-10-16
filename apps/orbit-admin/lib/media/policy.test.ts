@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { userRole } from "@/lib/db/schema";
+import { USER_ROLES } from "@/lib/db/model-types";
 
 import { canDeleteMedia, canEditMedia, canUploadMedia } from "./policy";
 
@@ -36,7 +36,7 @@ describe("media policy", () => {
 
   it("decides for every role the database can hold", () => {
     // A new role must not fall through to an accidental allow.
-    for (const role of userRole.enumValues) {
+    for (const role of USER_ROLES) {
       for (const decide of [canUploadMedia, canEditMedia, canDeleteMedia]) {
         expect(typeof decide({ role })).toBe("boolean");
       }
@@ -44,7 +44,7 @@ describe("media policy", () => {
   });
 
   it("is strictly narrower for delete than for edit", () => {
-    for (const role of userRole.enumValues) {
+    for (const role of USER_ROLES) {
       if (canDeleteMedia({ role })) {
         expect(canEditMedia({ role }), `${role} may delete but not edit`).toBe(
           true,
