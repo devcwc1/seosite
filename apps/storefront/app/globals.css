@@ -1,9 +1,9 @@
 /*
- * Design system: "Clinical Vitality" (Apotheek 24/7), exported from Stitch.
+ * Design system: the Orbit Storefront theme.
  *
- * The token names mirror the design's own vocabulary — surface ramp, on-*
- * pairings, and a named type scale — so a value here can be traced straight
- * back to the design file. Components below only ever reference these tokens.
+ * Material-style tokens — a surface ramp, on-* pairings, and a named type
+ * scale — so a value here reads as its role, not a raw hex. Components below
+ * only ever reference these tokens. The brand accent is Orbit indigo.
  */
 @import "tailwindcss";
 
@@ -18,25 +18,25 @@
   --color-surface-container-high: #eae8e7;
   --color-surface-container-highest: #e4e2e1;
   --color-on-surface: #1b1c1c;
-  --color-on-surface-variant: #5a403e;
+  --color-on-surface-variant: #52525b;
   --color-inverse-surface: #303030;
   --color-inverse-on-surface: #f3f0f0;
-  --color-outline: #8e706d;
-  --color-outline-variant: #e3bebb;
+  --color-outline: #71717a;
+  --color-outline-variant: #d4d4d8;
 
-  /* -- brand -------------------------------------------------------------- */
-  --color-primary: #9e0619;
+  /* -- brand (Orbit indigo) ----------------------------------------------- */
+  --color-primary: #4338ca;
   --color-on-primary: #ffffff;
-  --color-primary-container: #c1282e;
-  --color-primary-fixed: #ffdad7;
-  --color-on-primary-fixed: #410004;
-  --color-secondary-container: #fdafb2;
-  --color-on-secondary-container: #794043;
-  --color-secondary-fixed: #ffdada;
-  --color-on-secondary-fixed: #380c11;
+  --color-primary-container: #4f46e5;
+  --color-primary-fixed: #e0e7ff;
+  --color-on-primary-fixed: #1e1b4b;
+  --color-secondary-container: #c7d2fe;
+  --color-on-secondary-container: #3730a3;
+  --color-secondary-fixed: #e0e7ff;
+  --color-on-secondary-fixed: #1e1b4b;
 
-  /* Deep teal — the design's "medical safe" counterweight to the red, used
-     for verified/available states so availability never reads as an alert. */
+  /* Deep teal — a calm complementary accent used for verified/available
+     states, so availability reads as reassuring rather than as an alert. */
   --color-tertiary: #1c555e;
   --color-on-tertiary: #ffffff;
   --color-tertiary-container: #386d76;

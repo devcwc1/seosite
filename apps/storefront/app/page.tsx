@@ -17,11 +17,9 @@ import { formatPrice, orbit, primaryImage } from "@/lib/orbit";
 import { getSite, pageMetadata, siteOrigin } from "@/lib/seo";
 
 /**
- * Home, following the Apotheek 24/7 "Home" screen: hero band with a stat card,
- * an assurance strip, a four-up featured grid on the 12-column bento, and a
- * two-column explainer. The design's own copy sells a Dutch pharmacy, so the
- * words here describe this store instead — the layout and type scale are the
- * part that carries over.
+ * Home: hero band with a stat card, an assurance strip, a four-up featured grid
+ * on the 12-column bento, and a two-column explainer. The copy describes the
+ * Orbit reference storefront — what it is and how it reads its data.
  */
 
 const FEATURED_COUNT = 4;
