@@ -1,5 +1,5 @@
 import { isAdmin, isWriter } from "@/lib/auth/session";
-import type { User } from "@/lib/db/schema";
+import type { User } from "@/lib/db/model-types";
 
 /**
  * Who may do what to the media library — ORB-505, enforced per ORB-506/207.

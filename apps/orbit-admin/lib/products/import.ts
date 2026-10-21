@@ -1,8 +1,12 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+
 import { recordAudit } from "@/lib/audit";
-import { db } from "@/lib/db";
-import { categories, products } from "@/lib/db/schema";
+import {
+  categoriesCollection,
+  productsCollection,
+} from "@/lib/db/mongo-collections";
 import type { ProductCategorySelection } from "@/lib/categories/mutations";
 import { slugify } from "./validation";
 
@@ -45,21 +49,21 @@ type Existing = {
 
 async function loadExisting(): Promise<Existing> {
   const [productRows, categoryRows] = await Promise.all([
-    db.select({ id: products.id, sku: products.sku, slug: products.slug }).from(products),
-    db.select({ id: categories.id, name: categories.name, slug: categories.slug }).from(categories),
+    productsCollection().find({}, { projection: { sku: 1, slug: 1 } }).toArray(),
+    categoriesCollection().find({}, { projection: { name: 1, slug: 1 } }).toArray(),
   ]);
 
   const bySku = new Map<string, { id: string; slug: string }>();
   const slugs = new Set<string>();
   for (const row of productRows) {
-    bySku.set(row.sku.toLowerCase(), { id: row.id, slug: row.slug });
+    bySku.set(row.sku.toLowerCase(), { id: row._id, slug: row.slug });
     slugs.add(row.slug);
   }
 
   const categoriesByName = new Map<string, string>();
   const categorySlugs = new Set<string>();
   for (const row of categoryRows) {
-    categoriesByName.set(row.name.toLowerCase(), row.id);
+    categoriesByName.set(row.name.toLowerCase(), row._id);
     categorySlugs.add(row.slug);
   }
 
@@ -205,21 +209,29 @@ async function makeCategoryResolver(existing: Existing, actorId: string | null) 
     let n = 2;
     while (usedSlugs.has(slug)) slug = `${slugify(name) || "category"}-${n++}`;
 
-    const [row] = await db
-      .insert(categories)
-      .values({ name, slug, meta: {}, position: 0, createdBy: actorId })
-      .returning({ id: categories.id });
-    if (!row) throw new Error(`Could not create category "${name}"`);
+    const now = new Date();
+    const id = randomUUID();
+    await categoriesCollection().insertOne({
+      _id: id,
+      slug,
+      name,
+      description: null,
+      meta: {},
+      position: 0,
+      createdBy: actorId,
+      createdAt: now,
+      updatedAt: now,
+    });
 
-    byName.set(key, row.id);
+    byName.set(key, id);
     usedSlugs.add(slug);
     await recordAudit({
       actorId,
       action: "category.created",
-      target: `category:${row.id}`,
+      target: `category:${id}`,
       metadata: { slug, name, via: "import" },
     });
-    return row.id;
+    return id;
   };
 }
 
@@ -402,8 +414,8 @@ export async function runImport(
   }
 
   // Report how many categories the run created, by re-counting.
-  const categoriesNow = await db.select({ id: categories.id }).from(categories);
-  result.categoriesCreated = Math.max(0, categoriesNow.length - categoriesBefore);
+  const categoriesNow = await categoriesCollection().countDocuments({});
+  result.categoriesCreated = Math.max(0, categoriesNow - categoriesBefore);
 
   await recordAudit({
     actorId,

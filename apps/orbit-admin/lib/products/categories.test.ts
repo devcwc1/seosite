@@ -1,4 +1,3 @@
-import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 
 import {
@@ -8,8 +7,7 @@ import {
   updateCategory,
 } from "@/lib/categories/mutations";
 import { categoryInputSchema } from "@/lib/categories/validation";
-import { db, pool } from "@/lib/db";
-import { categories } from "@/lib/db/schema";
+import { categoriesCollection } from "@/lib/db/mongo-collections";
 import { getStorefrontProduct } from "@/lib/storefront/products";
 
 import {
@@ -66,8 +64,10 @@ function productInput(
 
 afterAll(async () => {
   for (const id of productIds) await deleteProduct(id, null);
-  for (const id of categoryIds) await db.delete(categories).where(eq(categories.id, id));
-  await pool.end();
+  if (categoryIds.length) {
+    await categoriesCollection().deleteMany({ _id: { $in: categoryIds } });
+  }
+  // The shared Mongo client is closed by test/setup.ts.
 });
 
 describe("categories as archive pages", () => {
@@ -91,11 +91,7 @@ describe("categories as archive pages", () => {
     );
     expect(result.ok).toBe(true);
 
-    const [row] = await db
-      .select()
-      .from(categories)
-      .where(eq(categories.id, id))
-      .limit(1);
+    const row = await categoriesCollection().findOne({ _id: id });
 
     expect(row?.description).toBe("Everything for a better night.");
     expect(row?.meta).toEqual({
@@ -198,11 +194,7 @@ describe("categories as archive pages", () => {
 
     await expect(deleteCategory(id, null)).resolves.toMatchObject({ ok: true });
 
-    const [row] = await db
-      .select()
-      .from(categories)
-      .where(eq(categories.id, id))
-      .limit(1);
-    expect(row).toBeUndefined();
+    const row = await categoriesCollection().findOne({ _id: id });
+    expect(row).toBeNull();
   });
 });

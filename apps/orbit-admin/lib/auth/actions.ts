@@ -1,6 +1,5 @@
 "use server";
 
-import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 
 import { recordAudit } from "@/lib/audit";
@@ -9,8 +8,7 @@ import {
   getCurrentSession,
   markCurrentSessionMfaVerified,
 } from "@/lib/auth/session";
-import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
+import { usersCollection } from "@/lib/db/mongo-collections";
 
 /** Sign out: delete the session row, clear the cookie, back to /login. */
 export async function logoutAction(): Promise<void> {
@@ -35,10 +33,10 @@ export async function completeMfaEnrollmentAction(): Promise<void> {
   const current = await getCurrentSession();
   if (!current) redirect("/login");
 
-  await db
-    .update(users)
-    .set({ mfaEnrolled: true })
-    .where(eq(users.id, current.user.id));
+  await usersCollection().updateOne(
+    { _id: current.user.id },
+    { $set: { mfaEnrolled: true } },
+  );
   await markCurrentSessionMfaVerified();
   await recordAudit({
     actorId: current.user.id,

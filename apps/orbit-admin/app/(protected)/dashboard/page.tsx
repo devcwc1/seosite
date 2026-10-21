@@ -1,5 +1,3 @@
-import { count, eq } from "drizzle-orm";
-
 import {
   Card,
   CardContent,
@@ -7,23 +5,22 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { db } from "@/lib/db";
-import { products, users } from "@/lib/db/schema";
+import {
+  productsCollection,
+  usersCollection,
+} from "@/lib/db/mongo-collections";
 
 export default async function DashboardPage() {
-  const [prodRows, pubRows, userRows] = await Promise.all([
-    db.select({ value: count() }).from(products),
-    db
-      .select({ value: count() })
-      .from(products)
-      .where(eq(products.status, "published")),
-    db.select({ value: count() }).from(users),
+  const [productCount, publishedCount, userCount] = await Promise.all([
+    productsCollection().countDocuments({}),
+    productsCollection().countDocuments({ status: "published" }),
+    usersCollection().countDocuments({}),
   ]);
 
   const stats = [
-    { label: "Products", value: prodRows[0]?.value ?? 0 },
-    { label: "Published", value: pubRows[0]?.value ?? 0 },
-    { label: "Users", value: userRows[0]?.value ?? 0 },
+    { label: "Products", value: productCount },
+    { label: "Published", value: publishedCount },
+    { label: "Users", value: userCount },
   ];
 
   return (

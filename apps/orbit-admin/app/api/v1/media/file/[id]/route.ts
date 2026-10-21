@@ -1,8 +1,6 @@
-import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
-import { db } from "@/lib/db";
-import { mediaAssets } from "@/lib/db/schema";
+import { mediaAssetsCollection } from "@/lib/db/mongo-collections";
 import { problemFor } from "@/lib/http/problem";
 import { readStored } from "@/lib/media/storage";
 
@@ -27,11 +25,7 @@ export async function GET(
     return problemFor(400, "Invalid asset id.", { instance });
   }
 
-  const [asset] = await db
-    .select()
-    .from(mediaAssets)
-    .where(eq(mediaAssets.id, id))
-    .limit(1);
+  const asset = await mediaAssetsCollection().findOne({ _id: id });
   if (!asset) return problemFor(404, "No such asset.", { instance });
 
   if (asset.externalUrl) {

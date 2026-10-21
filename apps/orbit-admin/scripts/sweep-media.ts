@@ -20,10 +20,8 @@ import "dotenv/config";
 import { readdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 
-import { isNotNull } from "drizzle-orm";
-
-import { db, pool } from "../lib/db";
-import { mediaAssets } from "../lib/db/schema";
+import { mongoClient } from "../lib/db/mongo";
+import { mediaAssetsCollection } from "../lib/db/mongo-collections";
 
 /**
  * Deliberately not imported from lib/media/storage: that module is marked
@@ -49,10 +47,12 @@ async function main() {
   const remove = process.argv.includes("--delete");
   const root = mediaRoot();
 
-  const rows = await db
-    .select({ storageKey: mediaAssets.storageKey, thumbKey: mediaAssets.thumbKey })
-    .from(mediaAssets)
-    .where(isNotNull(mediaAssets.storageKey));
+  const rows = await mediaAssetsCollection()
+    .find(
+      { storageKey: { $ne: null } },
+      { projection: { storageKey: 1, thumbKey: 1 } },
+    )
+    .toArray();
 
   // Every key any row points at, soft-deleted rows included.
   const referenced = new Set<string>();
@@ -90,4 +90,4 @@ main()
     console.error(error);
     process.exitCode = 1;
   })
-  .finally(() => pool.end());
+  .finally(() => mongoClient.close());

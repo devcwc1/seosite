@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import Image from "next/image";
 import Link from "next/link";
 
-import logo from "@/public/logo.webp";
 import { ArrowUpIcon, CartIcon, SearchIcon } from "@/components/icons";
 import { countItems, readCart } from "@/lib/cart";
 import { orbit } from "@/lib/orbit";
@@ -95,15 +93,14 @@ export default async function RootLayout({
         <header className="sticky top-0 z-50 border-b border-outline-variant bg-surface">
           <div className="shell flex flex-col gap-sm py-sm">
             <div className="flex items-center justify-between gap-md">
-              <Link href="/" className="flex shrink-0 items-center">
-                {/* Statically imported, so Next knows the intrinsic size and
-                    the header never shifts while it loads. */}
-                <Image
-                  src={logo}
-                  alt="Apotheek 24/7"
-                  priority
-                  className="h-8 w-auto md:h-10"
-                />
+              <Link
+                href="/"
+                className="flex shrink-0 items-center"
+                aria-label="Orbit home"
+              >
+                <span className="text-headline-md font-bold tracking-tight text-primary">
+                  Orbit
+                </span>
               </Link>
 
               <SearchField className="mx-md hidden max-w-[28rem] flex-1 md:block" />
@@ -176,11 +173,9 @@ export default async function RootLayout({
         <footer className="border-t border-outline-variant bg-surface-container-low">
           <div className="shell grid grid-cols-1 gap-lg py-section-gap md:grid-cols-4">
             <div className="flex flex-col gap-sm">
-              <Image
-                src={logo}
-                alt="Apotheek 24/7"
-                className="h-8 w-auto self-start"
-              />
+              <span className="text-headline-sm font-bold tracking-tight text-primary">
+                Orbit
+              </span>
               <p className="text-body-sm text-on-surface-variant">
                 A reference storefront for the Orbit platform. Every product,
                 price and image here is published from the Orbit admin and read

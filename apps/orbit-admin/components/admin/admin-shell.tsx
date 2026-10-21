@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/ui/status-chip";
 import { logoutAction } from "@/lib/auth/actions";
 import { navigationFor } from "@/lib/navigation/nav";
-import type { User } from "@/lib/db/schema";
+import type { User } from "@/lib/db/model-types";
 
 /**
  * The authenticated shell every protected screen composes into — ORB-106.

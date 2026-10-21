@@ -1,8 +1,9 @@
-import { inArray } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { db, pool } from "@/lib/db";
-import { categories, products } from "@/lib/db/schema";
+import {
+  categoriesCollection,
+  productsCollection,
+} from "@/lib/db/mongo-collections";
 import { getStorefrontProduct } from "@/lib/storefront/products";
 
 import { DEFAULT_IMPORT_OPTIONS, type ColumnMapping, type ImportOptions } from "./import-map";
@@ -41,17 +42,15 @@ const MAP: ColumnMapping = {
 
 afterAll(async () => {
   const skus = ["A", "B", "C"].map(sku);
-  const rows = await db
-    .select({ id: products.id })
-    .from(products)
-    .where(inArray(products.sku, skus));
+  const rows = await productsCollection()
+    .find({ sku: { $in: skus } }, { projection: { _id: 1 } })
+    .toArray();
   if (rows.length > 0) {
-    // deleteProduct cascades content/media; a raw delete is enough for the test.
     const { deleteProduct } = await import("./mutations");
-    for (const r of rows) await deleteProduct(r.id, null);
+    for (const r of rows) await deleteProduct(r._id, null);
   }
-  await db.delete(categories).where(inArray(categories.name, [catName]));
-  await pool.end();
+  await categoriesCollection().deleteMany({ name: { $in: [catName] } });
+  // The shared Mongo client is closed by test/setup.ts.
 });
 
 describe("previewImport", () => {
@@ -70,8 +69,8 @@ describe("previewImport", () => {
     expect(preview.newCategories).toContain(catName);
 
     // A preview must not create anything.
-    const [cat] = await db.select().from(categories).where(inArray(categories.name, [catName]));
-    expect(cat).toBeUndefined();
+    const cat = await categoriesCollection().findOne({ name: catName });
+    expect(cat).toBeNull();
   });
 });
 
@@ -119,7 +118,7 @@ describe("runImport", () => {
     expect(mug?.title).toBe(`Import Mug ${suffix} v2`);
 
     // Exactly one product carries this SKU.
-    const rows = await db.select().from(products).where(inArray(products.sku, [sku("A")]));
+    const rows = await productsCollection().find({ sku: sku("A") }).toArray();
     expect(rows).toHaveLength(1);
   });
 

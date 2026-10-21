@@ -1,14 +1,13 @@
-import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { db, pool } from "@/lib/db";
-import { mediaAssets } from "@/lib/db/schema";
+import { mediaAssetsCollection } from "@/lib/db/mongo-collections";
 import { THUMB_MAX_EDGE } from "@/lib/media/constants";
 import { processUpload } from "@/lib/media/process";
 import { deleteStored, readStored } from "@/lib/media/storage";
 
 import { assetThumbUrl, toAssetDTO } from "./assets";
+import { docToAssetView } from "./asset-view";
 
 /**
  * Grid cells used to load the full-size original — an 8000px upload behind a
@@ -40,12 +39,11 @@ async function upload(name: string, size: number) {
 
 afterAll(async () => {
   for (const id of created) {
-    const [row] = await db.select().from(mediaAssets).where(eq(mediaAssets.id, id));
+    const row = await mediaAssetsCollection().findOne({ _id: id });
     if (row?.storageKey) await deleteStored(row.storageKey);
     if (row?.thumbKey) await deleteStored(row.thumbKey);
-    await db.delete(mediaAssets).where(eq(mediaAssets.id, id));
+    await mediaAssetsCollection().deleteOne({ _id: id });
   }
-  await pool.end();
 });
 
 describe("thumbnails", () => {
@@ -61,10 +59,7 @@ describe("thumbnails", () => {
   it("makes the thumbnail smaller than the original", async () => {
     // The entire point: a grid of a hundred cells should not download a
     // hundred full-size uploads.
-    const [row] = await db
-      .select()
-      .from(mediaAssets)
-      .where(eq(mediaAssets.id, created[0]!));
+    const row = await mediaAssetsCollection().findOne({ _id: created[0]! });
 
     const original = await readStored(row!.storageKey!);
     const thumb = await readStored(row!.thumbKey!);
@@ -80,13 +75,10 @@ describe("thumbnails", () => {
   });
 
   it("points the DTO at the thumbnail", async () => {
-    const [row] = await db
-      .select()
-      .from(mediaAssets)
-      .where(eq(mediaAssets.id, created[0]!));
+    const row = await mediaAssetsCollection().findOne({ _id: created[0]! });
 
-    expect(toAssetDTO(row!).thumbUrl).toBe(
-      `/api/v1/media/file/${row!.id}?variant=thumb`,
+    expect(toAssetDTO(docToAssetView(row!)).thumbUrl).toBe(
+      `/api/v1/media/file/${row!._id}?variant=thumb`,
     );
   });
 

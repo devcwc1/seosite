@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { ProductMeta } from "@/lib/db/schema";
+import type { ProductMeta } from "@/lib/db/model-types";
 
 /**
  * Per-page SEO fields, shared by products and categories.

@@ -1,27 +1,36 @@
 name: orbit
 
-# Only Caddy publishes ports to the host. Postgres and the two Next.js apps are
+# Only Caddy publishes ports to the host. MongoDB and the two Next.js apps are
 # reachable exclusively over the private `orbit-net` bridge network.
 
 services:
-  postgres:
-    image: postgres:16-alpine
+  mongo:
+    image: mongo:7
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-orbit}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orbit}
-      POSTGRES_DB: ${POSTGRES_DB:-orbit_admin}
+    # Single-node replica set (rs0). MongoDB requires a replica set for
+    # multi-document transactions, which the data layer relies on. The
+    # healthcheck initiates the set on first boot, then reports healthy only
+    # once a writable primary is elected. The member advertises `mongo:27017`
+    # so in-network clients resolve it; host-run dev connects with
+    # `directConnection=true` to bypass topology discovery (see .env.template).
+    command: ["--replSet", "rs0", "--bind_ip_all"]
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - mongodata:/data/db
     networks:
       - orbit-net
     healthcheck:
       test:
-        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-orbit} -d ${POSTGRES_DB:-orbit_admin}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
+        [
+          "CMD",
+          "mongosh",
+          "--quiet",
+          "--eval",
+          "try{if(db.hello().isWritablePrimary)quit(0)}catch(e){};try{rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]})}catch(e){};quit(1)",
+        ]
+      interval: 5s
+      timeout: 20s
+      retries: 30
+      start_period: 3s
 
   orbit-admin:
     build:
@@ -30,7 +39,9 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER:-orbit}:${POSTGRES_PASSWORD:-orbit}@postgres:5432/${POSTGRES_DB:-orbit_admin}
+      # The only database. In-network clients use the full replica set; the
+      # member host `mongo:27017` resolves over orbit-net.
+      MONGODB_URI: mongodb://mongo:27017/${MONGO_DB:-orbit_admin}?replicaSet=rs0
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # ORB-501 media volume — outside /app, never on an executable path.
       MEDIA_DIR: /srv/orbit-media
@@ -41,7 +52,7 @@ services:
       ORDER_SHIPPING_CENTS: ${ORDER_SHIPPING_CENTS:-0}
       ORDER_TAX_RATE_BP: ${ORDER_TAX_RATE_BP:-0}
     depends_on:
-      postgres:
+      mongo:
         condition: service_healthy
     networks:
       - orbit-net
@@ -50,7 +61,7 @@ services:
     volumes:
       - media:/srv/orbit-media
     healthcheck:
-      # Becomes healthy only once boot migrations complete (/api/health -> 200).
+      # Becomes healthy once the app answers /api/health -> 200.
       test:
         [
           "CMD",
@@ -125,7 +136,7 @@ services:
       - orbit-net
 
 volumes:
-  pgdata:
+  mongodata:
   media:
   caddy_data:
   caddy_config:

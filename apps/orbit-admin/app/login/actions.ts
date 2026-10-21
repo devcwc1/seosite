@@ -1,6 +1,5 @@
 "use server";
 
-import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 
 import { recordAudit } from "@/lib/audit";
@@ -10,8 +9,7 @@ import {
   pendingMfaStep,
   setSessionCookie,
 } from "@/lib/auth/session";
-import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
+import { usersCollection } from "@/lib/db/mongo-collections";
 
 export type LoginState = { error?: string };
 
@@ -28,23 +26,19 @@ export async function loginAction(
     return { error: "Email and password are required." };
   }
 
-  const [user] = await db
-    .select()
-    .from(users)
-    .where(eq(users.email, email))
-    .limit(1);
+  const user = await usersCollection().findOne({ email });
 
   // Same generic message whether the email is unknown or the password is wrong.
   if (!user || !(await verifyPassword(user.passwordHash, password))) {
     return { error: "Invalid email or password." };
   }
 
-  const { token, cookieExpiresAt } = await createSession(user.id);
+  const { token, cookieExpiresAt } = await createSession(user._id);
   await setSessionCookie(token, cookieExpiresAt);
   await recordAudit({
-    actorId: user.id,
+    actorId: user._id,
     action: "auth.login",
-    target: `user:${user.id}`,
+    target: `user:${user._id}`,
   });
 
   // redirect() throws; keep it out of any try/catch.

@@ -8,13 +8,13 @@ export default defineConfig({
   // its own or every .tsx test fails to parse.
   plugins: [react()],
   test: {
-    // Node by default: most suites talk to Postgres and want no DOM. Component
+    // Node by default: most suites talk to MongoDB and want no DOM. Component
     // tests opt into a DOM per file with `// @vitest-environment jsdom`, which
     // keeps jsdom's startup cost off the suites that do not need it.
     environment: "node",
     globals: true,
     include: ["**/*.{test,spec}.{ts,tsx}"],
-    exclude: ["node_modules", ".next", "drizzle", "dist"],
+    exclude: ["node_modules", ".next", "dist"],
     setupFiles: ["./test/setup.ts"],
   },
   resolve: {

@@ -1,9 +1,10 @@
-import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { db, pool } from "@/lib/db";
-import { mediaAssets, productMedia } from "@/lib/db/schema";
+import {
+  mediaAssetsCollection,
+  productsCollection,
+} from "@/lib/db/mongo-collections";
 import {
   linkAssetToProduct,
   unlinkAssetFromProduct,
@@ -68,18 +69,22 @@ function formInput(
   });
 }
 
+/** The product's embedded gallery refs (was the product_media join). */
+async function galleryOf(productId: string) {
+  const doc = await productsCollection().findOne(
+    { _id: productId },
+    { projection: { media: 1 } },
+  );
+  return doc?.media ?? [];
+}
+
 afterAll(async () => {
   for (const id of productIds) await deleteProduct(id, null);
   for (const id of assetIds) {
-    const [row] = await db
-      .select()
-      .from(mediaAssets)
-      .where(eq(mediaAssets.id, id))
-      .limit(1);
+    const row = await mediaAssetsCollection().findOne({ _id: id });
     if (row?.storageKey) await deleteStored(row.storageKey);
-    await db.delete(mediaAssets).where(eq(mediaAssets.id, id));
+    await mediaAssetsCollection().deleteOne({ _id: id });
   }
-  await pool.end();
 });
 
 describe("product gallery round-trip (ORB-501)", () => {
@@ -117,10 +122,7 @@ describe("product gallery round-trip (ORB-501)", () => {
     const updated = await updateProduct(id!, formInput(resubmitted), null);
     expect(updated.ok).toBe(true);
 
-    const links = await db
-      .select()
-      .from(productMedia)
-      .where(eq(productMedia.productId, id!));
+    const links = await galleryOf(id!);
     expect(links).toHaveLength(2);
     expect(links.map((l) => l.position).sort()).toEqual([0, 1]);
   });
@@ -154,10 +156,7 @@ describe("product gallery round-trip (ORB-501)", () => {
     await linkAssetToProduct(id!, third);
     await linkAssetToProduct(id!, third); // idempotent
 
-    const links = await db
-      .select()
-      .from(productMedia)
-      .where(eq(productMedia.productId, id!));
+    const links = await galleryOf(id!);
     expect(links).toHaveLength(3);
     expect(
       links.find((link) => link.mediaAssetId === third)?.position,
@@ -166,20 +165,14 @@ describe("product gallery round-trip (ORB-501)", () => {
 
   it("unlinks a single asset without touching the rest (idempotent)", async () => {
     const id = productIds[0];
-    const before = await db
-      .select()
-      .from(productMedia)
-      .where(eq(productMedia.productId, id!));
+    const before = await galleryOf(id!);
     const target = before.at(-1)!.mediaAssetId;
 
     // What removeProductImageAction does on the product detail page.
     await unlinkAssetFromProduct(id!, target);
     await unlinkAssetFromProduct(id!, target); // idempotent
 
-    const after = await db
-      .select()
-      .from(productMedia)
-      .where(eq(productMedia.productId, id!));
+    const after = await galleryOf(id!);
     expect(after).toHaveLength(before.length - 1);
     expect(after.find((link) => link.mediaAssetId === target)).toBeUndefined();
   });

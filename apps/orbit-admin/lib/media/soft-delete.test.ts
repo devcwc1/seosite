@@ -1,8 +1,11 @@
-import { eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+
 import { afterAll, describe, expect, it } from "vitest";
 
-import { db, pool } from "@/lib/db";
-import { mediaAssets, productMedia } from "@/lib/db/schema";
+import {
+  mediaAssetsCollection,
+  productsCollection,
+} from "@/lib/db/mongo-collections";
 import { createProduct, deleteProduct } from "@/lib/products/mutations";
 import { productInputSchema } from "@/lib/products/validation";
 
@@ -13,32 +16,39 @@ const assetIds: string[] = [];
 const productIds: string[] = [];
 
 async function makeAsset(name: string): Promise<string> {
-  const [row] = await db
-    .insert(mediaAssets)
-    .values({
-      sha256: `sd${suffix}${name}`.padEnd(64, "0").slice(0, 64),
-      storageKey: `test/${suffix}/${name}.webp`,
-      format: "webp",
-      mimeType: "image/webp",
-      width: 100,
-      height: 100,
-      sizeBytes: 99,
-      originalName: `softdel-${suffix}-${name}.webp`,
-    })
-    .returning({ id: mediaAssets.id });
-  assetIds.push(row!.id);
-  return row!.id;
+  const id = randomUUID();
+  await mediaAssetsCollection().insertOne({
+    _id: id,
+    sha256: `sd${suffix}${name}`.padEnd(64, "0").slice(0, 64),
+    storageKey: `test/${suffix}/${name}.webp`,
+    externalUrl: null,
+    thumbKey: null,
+    format: "webp",
+    mimeType: "image/webp",
+    width: 100,
+    height: 100,
+    sizeBytes: 99,
+    originalName: `softdel-${suffix}-${name}.webp`,
+    originalMimeType: null,
+    title: null,
+    alt: null,
+    deletedAt: null,
+    uploadedBy: null,
+    createdAt: new Date(),
+  });
+  assetIds.push(id);
+  return id;
 }
 
 async function rowFor(id: string) {
-  const [row] = await db.select().from(mediaAssets).where(eq(mediaAssets.id, id));
-  return row;
+  return mediaAssetsCollection().findOne({ _id: id });
 }
 
 afterAll(async () => {
   for (const id of productIds) await deleteProduct(id, null);
-  for (const id of assetIds) await db.delete(mediaAssets).where(eq(mediaAssets.id, id));
-  await pool.end();
+  if (assetIds.length > 0) {
+    await mediaAssetsCollection().deleteMany({ _id: { $in: assetIds } });
+  }
 });
 
 describe("deleting a media asset", () => {
@@ -99,9 +109,10 @@ describe("deleting a media asset", () => {
     if (!product.ok) throw new Error("fixture failed");
     productIds.push(product.id);
 
-    await db
-      .insert(productMedia)
-      .values({ productId: product.id, mediaAssetId: id, position: 0 });
+    await productsCollection().updateOne(
+      { _id: product.id },
+      { $push: { media: { mediaAssetId: id, position: 0, alt: null } } },
+    );
 
     const result = await deleteAsset(id, null);
 

@@ -1,6 +1,6 @@
 import type { StorefrontProduct, StorefrontSeo } from "@orbit/next";
 
-import type { ProductCategory, ProductImage, ProductMeta } from "@/lib/db/schema";
+import type { ProductCategory, ProductImage, ProductMeta } from "@/lib/db/model-types";
 
 /**
  * Stored page meta onto the wire shape. Values are passed through as the

@@ -1,63 +1,97 @@
 import "server-only";
-import { toStoredMeta } from "@/lib/seo/meta";
 
-import { asc, count, eq, inArray } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 
 import { recordAudit } from "@/lib/audit";
-import { db } from "@/lib/db";
 import {
-  categories,
-  productCategories,
-  type Category,
-  type ProductMeta,
-} from "@/lib/db/schema";
+  categoriesCollection,
+  productsCollection,
+  type CategoryDoc,
+  type ProductCategoryRef,
+} from "@/lib/db/mongo-collections";
+import type { ProductMeta } from "@/lib/db/model-types";
+import { toStoredMeta } from "@/lib/seo/meta";
 
 import type { CategoryParsed } from "./validation";
+
+/**
+ * Categories live in MongoDB. A product embeds a denormalised category ref
+ * ({categoryId, slug, name, isPrimary}) in `content.categories`, so the old
+ * product_categories join is gone — "which products are in a category" is a
+ * query over the product documents.
+ */
 
 export type MutationResult =
   | { ok: true; id: string }
   | { ok: false; errors: Record<string, string> };
 
-export type CategoryWithCount = Category & { productCount: number };
+export type CategoryRecord = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  meta: ProductMeta;
+  position: number;
+  createdBy: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type CategoryWithCount = CategoryRecord & { productCount: number };
+
+function toCategoryRecord(doc: CategoryDoc): CategoryRecord {
+  return {
+    id: doc._id,
+    slug: doc.slug,
+    name: doc.name,
+    description: doc.description,
+    meta: doc.meta,
+    position: doc.position,
+    createdBy: doc.createdBy,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+  };
+}
 
 function toMeta(input: CategoryParsed): ProductMeta {
   return toStoredMeta(input.meta);
 }
 
-/** Ordered as the storefront nav shows them: position, then name. */
-export async function listCategories(): Promise<CategoryWithCount[]> {
-  const rows = await db
-    .select({
-      category: categories,
-      productCount: count(productCategories.id),
-    })
-    .from(categories)
-    .leftJoin(
-      productCategories,
-      eq(productCategories.categoryId, categories.id),
-    )
-    .groupBy(categories.id)
-    .orderBy(asc(categories.position), asc(categories.name));
-
-  return rows.map((row) => ({ ...row.category, productCount: row.productCount }));
+/** How many products reference each category, keyed by category id. */
+async function productCountsByCategory(): Promise<Map<string, number>> {
+  const rows = await productsCollection()
+    .aggregate([
+      { $unwind: "$content.categories" },
+      { $group: { _id: "$content.categories.categoryId", n: { $sum: 1 } } },
+    ])
+    .toArray();
+  return new Map(rows.map((r) => [r._id as string, r.n as number]));
 }
 
-export async function getCategory(id: string): Promise<Category | null> {
-  const [row] = await db
-    .select()
-    .from(categories)
-    .where(eq(categories.id, id))
-    .limit(1);
-  return row ?? null;
+/** Ordered as the storefront nav shows them: position, then name. */
+export async function listCategories(): Promise<CategoryWithCount[]> {
+  const [docs, counts] = await Promise.all([
+    categoriesCollection().find({}).sort({ position: 1, name: 1 }).toArray(),
+    productCountsByCategory(),
+  ]);
+
+  return docs.map((doc) => ({
+    ...toCategoryRecord(doc),
+    productCount: counts.get(doc._id) ?? 0,
+  }));
+}
+
+export async function getCategory(id: string): Promise<CategoryRecord | null> {
+  const doc = await categoriesCollection().findOne({ _id: id });
+  return doc ? toCategoryRecord(doc) : null;
 }
 
 async function slugTaken(slug: string, excludeId: string | null) {
-  const [row] = await db
-    .select({ id: categories.id })
-    .from(categories)
-    .where(eq(categories.slug, slug))
-    .limit(1);
-  return row !== undefined && row.id !== excludeId;
+  const row = await categoriesCollection().findOne(
+    excludeId ? { slug, _id: { $ne: excludeId } } : { slug },
+    { projection: { _id: 1 } },
+  );
+  return row !== null;
 }
 
 export async function createCategory(
@@ -68,27 +102,33 @@ export async function createCategory(
     return { ok: false, errors: { slug: "This slug is already in use." } };
   }
 
-  const [row] = await db
-    .insert(categories)
-    .values({
-      slug: input.slug,
-      name: input.name,
-      description: input.description || null,
-      meta: toMeta(input),
-      position: input.position,
-      createdBy: actorId,
-    })
-    .returning({ id: categories.id });
-  if (!row) return { ok: false, errors: { form: "Could not create category." } };
+  const now = new Date();
+  const doc: CategoryDoc = {
+    _id: randomUUID(),
+    slug: input.slug,
+    name: input.name,
+    description: input.description || null,
+    meta: toMeta(input),
+    position: input.position,
+    createdBy: actorId,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  try {
+    await categoriesCollection().insertOne(doc);
+  } catch {
+    return { ok: false, errors: { form: "Could not create category." } };
+  }
 
   await recordAudit({
     actorId,
     action: "category.created",
-    target: `category:${row.id}`,
+    target: `category:${doc._id}`,
     metadata: { slug: input.slug, name: input.name },
   });
 
-  return { ok: true, id: row.id };
+  return { ok: true, id: doc._id };
 }
 
 export async function updateCategory(
@@ -103,17 +143,19 @@ export async function updateCategory(
     return { ok: false, errors: { slug: "This slug is already in use." } };
   }
 
-  await db
-    .update(categories)
-    .set({
-      slug: input.slug,
-      name: input.name,
-      description: input.description || null,
-      meta: toMeta(input),
-      position: input.position,
-      updatedAt: new Date(),
-    })
-    .where(eq(categories.id, id));
+  await categoriesCollection().updateOne(
+    { _id: id },
+    {
+      $set: {
+        slug: input.slug,
+        name: input.name,
+        description: input.description || null,
+        meta: toMeta(input),
+        position: input.position,
+        updatedAt: new Date(),
+      },
+    },
+  );
 
   await recordAudit({
     actorId,
@@ -129,9 +171,9 @@ export async function updateCategory(
 export type DeleteResult = { ok: boolean; error?: string };
 
 /**
- * Deleting a category unfiles every product in it (the link cascades) but
- * never touches the products themselves. Refused while it still holds
- * products, so an archive page never disappears by accident.
+ * Deleting a category is refused while it still holds products, so an archive
+ * page never disappears by accident. (The embedded refs on products mean there
+ * is no join to cascade; the product documents are never touched here.)
  */
 export async function deleteCategory(
   id: string,
@@ -140,10 +182,9 @@ export async function deleteCategory(
   const existing = await getCategory(id);
   if (!existing) return { ok: false, error: "Category not found." };
 
-  const [{ value: linked } = { value: 0 }] = await db
-    .select({ value: count() })
-    .from(productCategories)
-    .where(eq(productCategories.categoryId, id));
+  const linked = await productsCollection().countDocuments({
+    "content.categories.categoryId": id,
+  });
 
   if (linked > 0) {
     return {
@@ -152,7 +193,7 @@ export async function deleteCategory(
     };
   }
 
-  await db.delete(categories).where(eq(categories.id, id));
+  await categoriesCollection().deleteOne({ _id: id });
 
   await recordAudit({
     actorId,
@@ -175,24 +216,20 @@ export type ProductCategorySelection = {
 export async function getProductCategories(
   productId: string,
 ): Promise<ProductCategorySelection[]> {
-  const rows = await db
-    .select({
-      categoryId: productCategories.categoryId,
-      isPrimary: productCategories.isPrimary,
-    })
-    .from(productCategories)
-    .where(eq(productCategories.productId, productId));
-
-  return rows;
+  const doc = await productsCollection().findOne(
+    { _id: productId },
+    { projection: { "content.categories": 1 } },
+  );
+  return (doc?.content.categories ?? []).map((c) => ({
+    categoryId: c.categoryId,
+    isPrimary: c.isPrimary,
+  }));
 }
 
 /**
- * Replace a product's category links inside the caller's transaction, so the
- * change lands with the rest of the product write or not at all.
- *
- * Exactly one link ends up primary: it drives the storefront's label and
+ * Exactly one selection ends up primary: it drives the storefront's label and
  * breadcrumb, and a product with two would render differently depending on
- * row order.
+ * order. Duplicates by categoryId are collapsed.
  */
 export function normalizeSelections(
   selections: ProductCategorySelection[],
@@ -209,86 +246,46 @@ export function normalizeSelections(
   }));
 }
 
-export async function setProductCategories(
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-  productId: string,
-  selections: ProductCategorySelection[],
-): Promise<void> {
-  await tx
-    .delete(productCategories)
-    .where(eq(productCategories.productId, productId));
-
-  const normalized = normalizeSelections(selections);
-  if (normalized.length === 0) return;
-
-  await tx.insert(productCategories).values(
-    normalized.map((selection) => ({
-      productId,
-      categoryId: selection.categoryId,
-      isPrimary: selection.isPrimary,
-    })),
-  );
-}
-
 /**
- * Resolve selections to the {slug, name, isPrimary} shape a content revision
- * records. A revision is history: it keeps the names as they were, even if a
- * category is later renamed or deleted.
+ * Resolve selections to the embedded refs a product stores: the slug and name
+ * are denormalised from the category entity so the storefront needs no join.
+ * A selection whose category no longer exists is dropped.
  */
-export async function resolveCategorySnapshot(
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+export async function resolveCategoryRefs(
   selections: ProductCategorySelection[],
-): Promise<{ slug: string; name: string; isPrimary: boolean }[]> {
+): Promise<ProductCategoryRef[]> {
   const normalized = normalizeSelections(selections);
   if (normalized.length === 0) return [];
 
-  const rows = await tx
-    .select({ id: categories.id, slug: categories.slug, name: categories.name })
-    .from(categories)
-    .where(
-      inArray(
-        categories.id,
-        normalized.map((s) => s.categoryId),
-      ),
-    );
-
-  const byId = new Map(rows.map((row) => [row.id, row]));
+  const docs = await categoriesCollection()
+    .find(
+      { _id: { $in: normalized.map((s) => s.categoryId) } },
+      { projection: { slug: 1, name: 1 } },
+    )
+    .toArray();
+  const byId = new Map(docs.map((d) => [d._id, d]));
 
   return normalized.flatMap((selection) => {
-    const row = byId.get(selection.categoryId);
-    if (!row) return [];
-    return [{ slug: row.slug, name: row.name, isPrimary: selection.isPrimary }];
+    const doc = byId.get(selection.categoryId);
+    if (!doc) return [];
+    return [
+      {
+        categoryId: selection.categoryId,
+        slug: doc.slug,
+        name: doc.name,
+        isPrimary: selection.isPrimary,
+      },
+    ];
   });
 }
 
-/** Category rows as the storefront DTO wants them, for one product. */
-export async function categoriesForProducts(
-  productIds: string[],
-): Promise<Map<string, { slug: string; name: string; isPrimary: boolean }[]>> {
-  const grouped = new Map<
-    string,
-    { slug: string; name: string; isPrimary: boolean }[]
-  >();
-  if (productIds.length === 0) return grouped;
-
-  const rows = await db
-    .select({
-      productId: productCategories.productId,
-      slug: categories.slug,
-      name: categories.name,
-      isPrimary: productCategories.isPrimary,
-      position: categories.position,
-    })
-    .from(productCategories)
-    .innerJoin(categories, eq(categories.id, productCategories.categoryId))
-    .where(inArray(productCategories.productId, productIds))
-    .orderBy(asc(categories.position), asc(categories.name));
-
-  for (const row of rows) {
-    const list = grouped.get(row.productId) ?? [];
-    list.push({ slug: row.slug, name: row.name, isPrimary: row.isPrimary });
-    grouped.set(row.productId, list);
-  }
-
-  return grouped;
+/** The {slug, name, isPrimary} shape a content revision records. */
+export function categorySnapshotFromRefs(
+  refs: ProductCategoryRef[],
+): { slug: string; name: string; isPrimary: boolean }[] {
+  return refs.map((ref) => ({
+    slug: ref.slug,
+    name: ref.name,
+    isPrimary: ref.isPrimary,
+  }));
 }

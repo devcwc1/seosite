@@ -1,1 +1,0 @@
-ALTER TABLE "media_assets" ADD COLUMN "title" varchar(512);

@@ -1,146 +1,106 @@
-import { and, asc, eq, inArray, type SQL } from "drizzle-orm";
 import type { StorefrontProduct } from "@orbit/next";
 
-import { db } from "@/lib/db";
 import {
-  mediaAssets,
-  productContent,
-  productMedia,
-  products,
-  type ProductCategory,
-  type ProductImage,
-} from "@/lib/db/schema";
-import { categoriesForProducts } from "@/lib/categories/mutations";
+  mediaAssetsCollection,
+  productsCollection,
+  type ProductDoc,
+} from "@/lib/db/mongo-collections";
+import type { ProductImage } from "@/lib/db/model-types";
+
 import { assetUrlsById } from "./assets";
 import { toStorefrontProduct, type StorefrontProductRow } from "./mapper";
 
-/** Read model behind the public storefront API. */
-
-/** Columns needed to build a `StorefrontProduct`, joined to its live content. */
-const selection = {
-  id: products.id,
-  slug: products.slug,
-  sku: products.sku,
-  priceCents: products.priceCents,
-  currency: products.currency,
-  inStock: products.inStock,
-  stockQuantity: products.stockQuantity,
-  title: productContent.title,
-  shortInfo: productContent.shortInfo,
-  description: productContent.description,
-  /** Legacy jsonb categories — fallback for rows not yet backfilled. */
-  legacyCategories: productContent.categories,
-  /** Legacy jsonb gallery — only a fallback for rows not yet backfilled. */
-  legacyImages: productContent.images,
-  meta: productContent.meta,
-  productUpdatedAt: products.updatedAt,
-  contentUpdatedAt: productContent.updatedAt,
-};
-
 /**
- * Published products joined to the content revision they currently point at.
- * The inner join also drops products with no content yet, which could not
- * produce a valid DTO anyway.
+ * Read model behind the public storefront API. Products live in MongoDB with
+ * their content, gallery and categories embedded; media asset URLs are
+ * resolved from the media_assets collection.
  */
-function selectPublished(extraFilter?: SQL) {
-  const published = eq(products.status, "published");
 
-  return db
-    .select(selection)
-    .from(products)
-    .innerJoin(productContent, eq(productContent.id, products.currentContentId))
-    .where(extraFilter ? and(published, extraFilter) : published);
-}
-
-type BaseRow = Awaited<ReturnType<typeof selectPublished>>[number];
-
-// Fails the build if the query stops producing what the mapper expects.
-type AssertRowMatchesMapper = BaseRow & {
-  images: ProductImage[];
-  categories: ProductCategory[];
-  ogImageUrl: string | null;
-  updatedAt: Date;
-} extends StorefrontProductRow
-  ? true
-  : never;
-const _rowShapeIsMappable: AssertRowMatchesMapper = true;
-void _rowShapeIsMappable;
-
-/**
- * Galleries come from `product_media` (ORB-501), not from the content snapshot
- * — the admin writes assets there, and the jsonb `images` column is legacy.
- */
+/** Resolve each product's ordered gallery to display images. */
 async function galleriesByProduct(
-  productIds: string[],
+  docs: ProductDoc[],
 ): Promise<Map<string, ProductImage[]>> {
-  const galleries = new Map<string, ProductImage[]>();
-  if (productIds.length === 0) return galleries;
-
-  const rows = await db
-    .select({
-      productId: productMedia.productId,
-      assetId: mediaAssets.id,
-      externalUrl: mediaAssets.externalUrl,
-      linkAlt: productMedia.alt,
-      assetAlt: mediaAssets.alt,
-      position: productMedia.position,
-    })
-    .from(productMedia)
-    .innerJoin(mediaAssets, eq(mediaAssets.id, productMedia.mediaAssetId))
-    .where(inArray(productMedia.productId, productIds))
-    .orderBy(asc(productMedia.position));
-
-  for (const row of rows) {
-    const alt = row.linkAlt ?? row.assetAlt;
-    const image: ProductImage = {
-      url: row.externalUrl ?? `/api/v1/media/file/${row.assetId}`,
-      position: row.position,
-      ...(alt ? { alt } : {}),
-    };
-    const existing = galleries.get(row.productId);
-    if (existing) existing.push(image);
-    else galleries.set(row.productId, [image]);
+  const map = new Map<string, ProductImage[]>();
+  const assetIds = [
+    ...new Set(docs.flatMap((d) => d.media.map((m) => m.mediaAssetId))),
+  ];
+  if (assetIds.length === 0) {
+    for (const d of docs) map.set(d._id, []);
+    return map;
   }
 
-  return galleries;
+  const assetDocs = await mediaAssetsCollection()
+    .find(
+      { _id: { $in: assetIds } },
+      { projection: { externalUrl: 1, alt: 1 } },
+    )
+    .toArray();
+  const byId = new Map(assetDocs.map((a) => [a._id, a]));
+
+  for (const d of docs) {
+    const images: ProductImage[] = [...d.media]
+      .sort((a, b) => a.position - b.position)
+      .flatMap((m) => {
+        const asset = byId.get(m.mediaAssetId);
+        if (!asset) return [];
+        const alt = m.alt ?? asset.alt;
+        return [
+          {
+            url: asset.externalUrl ?? `/api/v1/media/file/${m.mediaAssetId}`,
+            position: m.position,
+            ...(alt ? { alt } : {}),
+          },
+        ];
+      });
+    map.set(d._id, images);
+  }
+  return map;
 }
 
-async function withRelations(rows: BaseRow[]): Promise<StorefrontProductRow[]> {
-  const ids = rows.map((row) => row.id);
-  const [galleries, categories, ogImages] = await Promise.all([
-    galleriesByProduct(ids),
-    categoriesForProducts(ids),
-    assetUrlsById(rows.map((row) => row.meta?.ogImageAssetId)),
+async function toRows(docs: ProductDoc[]): Promise<StorefrontProductRow[]> {
+  const [galleries, ogImages] = await Promise.all([
+    galleriesByProduct(docs),
+    assetUrlsById(docs.map((d) => d.content.meta?.ogImageAssetId)),
   ]);
 
-  return rows.map((row) => ({
-    ...row,
-    ogImageUrl: row.meta?.ogImageAssetId
-      ? (ogImages.get(row.meta.ogImageAssetId) ?? null)
+  return docs.map((d) => ({
+    id: d._id,
+    slug: d.slug,
+    sku: d.sku,
+    priceCents: d.priceCents,
+    currency: d.currency,
+    inStock: d.inStock,
+    stockQuantity: d.stockQuantity,
+    title: d.content.title,
+    shortInfo: d.content.shortInfo,
+    description: d.content.description,
+    images: galleries.get(d._id) ?? [],
+    categories: d.content.categories.map((c) => ({
+      slug: c.slug,
+      name: c.name,
+      isPrimary: c.isPrimary,
+    })),
+    meta: d.content.meta,
+    ogImageUrl: d.content.meta?.ogImageAssetId
+      ? (ogImages.get(d.content.meta.ogImageAssetId) ?? null)
       : null,
-    // Either row changing is an edit worth telling a crawler about.
-    updatedAt:
-      row.contentUpdatedAt > row.productUpdatedAt
-        ? row.contentUpdatedAt
-        : row.productUpdatedAt,
-    // The join tables are authoritative; the snapshot jsonb is only read for
-    // rows that predate them and that no editor has saved since.
-    images: galleries.get(row.id) ?? row.legacyImages,
-    categories: categories.get(row.id) ?? row.legacyCategories,
+    updatedAt: d.updatedAt,
   }));
 }
 
 export async function listStorefrontProducts(): Promise<StorefrontProduct[]> {
-  const rows = await selectPublished().orderBy(products.createdAt);
-  return (await withRelations(rows)).map(toStorefrontProduct);
+  const docs = await productsCollection()
+    .find({ status: "published" })
+    .sort({ createdAt: 1 })
+    .toArray();
+  return (await toRows(docs)).map(toStorefrontProduct);
 }
 
 export async function getStorefrontProduct(
   slug: string,
 ): Promise<StorefrontProduct | null> {
-  const rows = await selectPublished(eq(products.slug, slug)).limit(1);
-  if (rows.length === 0) return null;
-
-  const [row] = await withRelations(rows);
+  const doc = await productsCollection().findOne({ slug, status: "published" });
+  if (!doc) return null;
+  const [row] = await toRows([doc]);
   return row ? toStorefrontProduct(row) : null;
 }
